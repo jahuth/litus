@@ -87,6 +87,25 @@ def exponential_filter(ar,length=100,steepness=2.0):
 def gauss(a=-1.0,b=1.0,resolution=100,m = 0.0,s = 0.5):
     return np.exp(-0.5*(np.linspace(float(a),float(b),resolution)-float(m))**2/float(s))
 
+class FlatKernel(object):
+    """
+        This class can hold a two dimensional object and return one dimensional indizes given a stride length for each row.
+        Together with the flattened object this can be used for more efficient convolution.
+    """
+    def __init__(self,k):
+        self.k = k
+        ks0 = self.k.shape[0]/2.0
+        ks1 = self.k.shape[1]/2.0
+        self.i = np.meshgrid(np.arange(-np.floor(ks0),np.ceil(ks0),1.0),
+                              np.arange(-np.floor(ks1),np.ceil(ks1),1.0))
+    def get_kernel(self):
+        return self.k.flatten()
+    def get_indizes(self, stride_length):
+        return (self.i[0] + self.i[1] * stride_length).flatten()
+    def get(self, stride_length):
+        k,i = self.get_kernel(), self.get_indizes(stride_length)
+        print k.shape, i.shape
+        return k[k!=0.0],i[k!=0.0]
 
 #############################################
 ## Sort things with numbers in them
