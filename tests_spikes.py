@@ -49,3 +49,10 @@ for a in sc.generate('b',preserve_labels=True):
     imshow(a.spatial_firing_rate_by_label('c','d')[0])
     figure()
     plot(a.spike_times.matrix)
+
+import utils
+gd = utils.GoettingenData(*utils.goettingen_files[2])
+time_signals = gd.time_signals
+ts = gd.time_signals.copy()
+ts[0,:] = ts[0,:]/1000.0
+
