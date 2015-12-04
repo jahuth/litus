@@ -400,36 +400,44 @@ class LabeledMatrix(object):
     def __call__(self,remove_dimensions=False,**kwargs):
         constraints = []
         remaining_label_dimensions = range(len(self.labels))
-        for k in kwargs:
-            for label_no,label in enumerate(self.labels):
+        new_labels = []
+        for label_no,label in enumerate(self.labels):
+            new_label = LabelDimension(label)
+            for k in kwargs:
                 if k == label.name:
                     constraints.append(self.matrix[:,label_no] == kwargs[k])
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__lt':
                     constraints.append(self.matrix[:,label_no] < kwargs[k])
+                    new_label.max = np.min([new_label.max,kwargs[k]])
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__lte':
                     constraints.append(self.matrix[:,label_no] <= kwargs[k])
+                    new_label.max = np.min([new_label.max,kwargs[k]])
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__gt':
                     constraints.append(self.matrix[:,label_no] > kwargs[k])
+                    new_label.min = np.max([new_label.min,kwargs[k]])
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__gte':
                     constraints.append(self.matrix[:,label_no] >= kwargs[k])
+                    new_label.min = np.max([new_label.min,kwargs[k]])
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__evals':
                     constraints.append(kwargs[k](self.matrix[:,label_no]))
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
+            new_labels.append(new_label)
+
         st = self.matrix[np.all(constraints,0),:]
         if remove_dimensions:
-            return LabeledMatrix(st[:,[r for r in remaining_label_dimensions]],[l for li,l in enumerate(self.labels) if li in remaining_label_dimensions])
-        return LabeledMatrix(st,self.labels)
+            return LabeledMatrix(st[:,[r for r in remaining_label_dimensions]],[l for li,l in enumerate(new_labels) if li in remaining_label_dimensions])
+        return LabeledMatrix(st,new_labels)
     def add_label_dimension(self,name,label_data):
         if len(label_data.shape) == 1:
             self.labels.append(LabelDimension(name))
@@ -558,8 +566,8 @@ class SpikeContainer:
         if units is None:
             units = 'ms'
         return units
-    def convert(self,units=None,conversion_function=convert_time):
-        return self.spike_times.convert(0,units,conversion_function=conversion_function)
+    def convert(self,label_no=0,units=None,conversion_function=convert_time):
+        return SpikeContainer(self.spike_times.convert(label_no,units=units,conversion_function=conversion_function),copy_from=self)
     def label_by_time(self,time_signals,label_names=[],copy=True, **kwargs):
         """
             creates a labeled spike data structure
