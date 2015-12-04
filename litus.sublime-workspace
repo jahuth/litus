@@ -547,7 +547,7 @@
 			"file": "/home/jacob/Projects/ni/ni/tools/html_view.py",
 			"settings":
 			{
-				"buffer_size": 23622,
+				"buffer_size": 23732,
 				"line_ending": "Unix"
 			}
 		},
@@ -1082,8 +1082,8 @@
 						"selection":
 						[
 							[
-								2289,
-								2289
+								2502,
+								2502
 							]
 						],
 						"settings":
@@ -1163,7 +1163,7 @@
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 23622,
+						"buffer_size": 23732,
 						"regions":
 						{
 						},
