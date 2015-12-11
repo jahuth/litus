@@ -107,6 +107,21 @@ class FlatKernel(object):
         print k.shape, i.shape
         return k[k!=0.0],i[k!=0.0]
 
+from cmath import rect, phase
+from math import radians, degrees
+
+def mean_angle(deg):
+    return degrees(phase(sum(rect(1, radians(d)) for d in deg)/len(deg)))
+
+def mean_orientation(deg):
+    v = [rect(1, radians(d)) for d in deg]
+    v = np.sign(np.imag(v))*np.real(v) + np.sign(np.imag(v))*np.imag(v)*1j
+    return degrees(phase(np.sum(v)/len(deg)))
+
+def orientation_difference(deg1,deg2):
+    d = min((deg1 - deg2)%180,(deg2 - deg1)%180)
+    return d
+
 #############################################
 ## Sort things with numbers in them
 
@@ -250,6 +265,53 @@ def icartesian_to_index(ranges, maxima=None):
         return np.sum(ranges * maxima_prod, 1)
         maxima_prod = np.concatenate([[1],np.cumprod(np.array(maxima))[:-1]])
         return np.sum(ranges[::-1] * maxima_prod, 1)
+
+def cartesian_dicts(dicts, sort=False):
+    if len(dicts.keys()) == 0:
+        return []
+    if sort is True:
+        sorted_keys = sorted(dicts.keys())
+    else:
+        sorted_keys = (dicts.keys())
+    if len(dicts.keys()) == 1:
+        this_iteration_key = sorted_keys[0]
+        return [{ this_iteration_key: x } for x in dicts[this_iteration_key]]
+    n = []
+    this_iteration_key = sorted_keys[0]
+    next_iteration = cartesian_dicts({ k: dicts[k] for k in sorted_keys[1:]})
+    for x in dicts[this_iteration_key]:
+        for o in next_iteration:
+            new_item = {}
+            new_item.update(o)
+            new_item.update({this_iteration_key: x})
+            n.append(new_item)
+    return n
+
+def fillzip(*l):
+    """like zip (for things that have a length), but repeats the last element of all shorter lists such that the result is as long as the longest."""
+    maximum = max(len(el) for el in l)
+    return zip(*[el + [el[-1]]*(maximum-len(el)) for el in l])
+
+#############################################
+## recursive generator flattener
+
+def recgen(gen):
+    """iterates through generators recursively and flattening them"""
+    if not hasattr(gen,'__iter__'):
+        yield gen
+    else:
+        for i in gen:
+            for ii in recgen(i):
+                yield ii
+
+def recgen_enumerate(gen,n=tuple()):
+    """iterates through generators recursively and flattening them"""
+    if not hasattr(gen,'__iter__'):
+        yield (n,gen)
+    else:
+        for i_,i in enumerate(gen):
+            for element in recgen_enumerate(i,n+(i_,)):
+                yield element
 
 #############################################
 ## plot things
