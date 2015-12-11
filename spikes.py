@@ -261,6 +261,8 @@ class LabelDimension(object):
             self.max = max
     def __str__(self):
         return "LabelDimension('"+self.name+"',"+str(self.units)+","+str(self.min)+","+str(self.max)+")"
+    def __repr__(self):
+        return "LabelDimension('"+self.name+"',"+str(self.units)+","+str(self.min)+","+str(self.max)+")"
     def len(self,resolution=1.0,units=None,conversion_function=convert_time):
         if units is not None:
             resolution = conversion_function(resolution,from_units=self.units,to_units=units)
@@ -269,15 +271,21 @@ class LabelDimension(object):
         if self.max is None:
             return 0
         return np.ceil((self.max - self.min) / resolution)
-    def linspace(self,bins=10,units=None,conversion_function=convert_time,resolution=1.0):
+    def linspace(self,bins=None,units=None,conversion_function=convert_time,resolution=None):
         """ bins overwrites resolution """
         min = conversion_function(self.min,from_units=self.units,to_units=units)
         max = conversion_function(self.max,from_units=self.units,to_units=units)
         if resolution is None:
             resolution = 1.0
         if bins is None:
-            bins = self.len(resolution=resolution,units=units,conversion_function=conversion_function)
-        return np.linspace(min,max,1+bins)
+            bins = self.len(resolution=resolution,units=units,conversion_function=conversion_function) + 1
+        return np.linspace(min,max,bins)
+    def linspace_bins(self,bins=None,units=None,conversion_function=convert_time,resolution=None):
+        """Generates bin edges for a linspace tiling: there is one edge more than bins and each bin is in the middle between two edges"""
+        bins = self.linspace(bins=bins,units=units,conversion_function=conversion_function,resolution=resolution)
+        resolution = bins[1] - bins[0]
+        bins = np.concatenate([bins,bins[-1:]+resolution]) - 0.5*resolution
+        return bins
     def linspace_by_resolution(self,resolution=1.0,units=None,conversion_function=convert_time):
         return self.linspace(bins=None,resolution=resolution,units=units,conversion_function=conversion_function)
     def convert(self,units=None):
@@ -288,7 +296,7 @@ class LabelDimension(object):
         """ bins overwrites resolution """
         space = self.linspace(*args,**kwargs)
         resolution = space[1] - space[0]
-        return [{self.name+'__gte': s,self.name+'__lt': s+resolution} for s in space[:-1]]
+        return [{self.name+'__gte': s,self.name+'__lt': s+resolution} for s in space]
 
 class LabeledMatrix(object):
     """
@@ -320,6 +328,8 @@ class LabeledMatrix(object):
         self.expand_maxima()
     def __str__(self):
         return "LabeledMatrix with label dimensions: "+", ".join([str(l) for l in self.labels])
+    def __repr__(self):
+        return "LabeledMatrix with label dimensions: "+", ".join([repr(l) for l in self.labels])
     def expand_maxima(self):
         if self.matrix is None or self.matrix.shape[0] == 0:
             return
@@ -348,6 +358,8 @@ class LabeledMatrix(object):
                     if key(label):
                         found_keys.append(label_no)
             return found_keys
+        if type(key) is int:
+            return [key] if key < self.matrix.shape[1] else []
         return [key]
     def get_label(self,key):
         if type(key) is str:
@@ -355,7 +367,7 @@ class LabeledMatrix(object):
                     if key == label.name:
                         return label
             raise Exception("Key not found! "+str(key))
-        return key
+        return self.labels[key]
     def get_label_no(self,key):
         if type(key) is str:
             for label_no,label in enumerate(self.labels):
@@ -383,7 +395,7 @@ class LabeledMatrix(object):
     def shape(self):
         return self.matrix.shape
     def get_converted(self,label=0,units=None,conversion_function=convert_time):
-        label_no = self.get_label(label)
+        label_no = self.get_label_no(label)
         min = conversion_function(self.labels[label_no].min,from_units=self.labels[label_no].units,to_units=units)
         max = conversion_function(self.labels[label_no].max,from_units=self.labels[label_no].units,to_units=units)
         new_label = LabelDimension(self.labels[label_no].name,units=units,min=min,max=max)
@@ -454,6 +466,8 @@ class LabeledMatrix(object):
         else:
             new_index = cartesian_to_index(self.matrix[:,1:])
         self.add_label(name, new_index)
+    def __nonzero__(self):
+        return self.matrix.shape[0] > 0
     def generate(self,*args,**kwargs):
         constraints = []
         preserve_labels = kwargs.get('preserve_labels',False)
@@ -551,6 +565,16 @@ class SpikeContainer:
                 raise
     def __str__(self):
         return "Spike Container with dimensions: "+", ".join([str(l) for l in self.spike_times.labels])
+    def __repr__(self):
+        return "Spike Container with dimensions: "+", ".join([repr(l) for l in self.spike_times.labels])
+    def __nonzero__(self):
+        return bool(self.spike_times)
+    def store_meta(self,meta):
+        "Inplace method that adds meta information to the meta dictionary"
+        if self.meta is None:
+            self.meta = {}
+        self.meta.update(meta)
+        return self
     def find(self,cell_designation,cell_filter=lambda x,c: 'c' in x and x['c'] == c):
         """
             finds spike containers in multi spike containers collection offspring
@@ -739,10 +763,10 @@ class SpikeContainer:
                 imshow(s.spatial_firing_rate(weight_function=lambda x: (x[:,1]>0.5)*(x[:,1]<0.6)))
 
         """
-        if self.data_format == 'spike_times':
+        if bool(self):
             if weight_function is None:
-                bins_x = self.spike_times.get_label(label_y).linspace(bins=bins)
-                bins_y = self.spike_times.get_label(label_x).linspace(bins=bins)
+                bins_x = self.spike_times.get_label(label_y).linspace_bins(bins=bins)
+                bins_y = self.spike_times.get_label(label_x).linspace_bins(bins=bins)
                 H,xed,yed = np.histogram2d(self.spike_times[label_x],self.spike_times[label_y],bins=(bins_x,bins_y))
             else:
                 if start_units_with_0:
@@ -751,8 +775,8 @@ class SpikeContainer:
                     weights = weight_function(spike_numbers)
                 else:
                     weights = weight_function(self.spike_times[label_x],self.spike_times[label_y])
-                bins_x = self.spike_times.get_label(label_y).linspace(bins=bins)
-                bins_y = self.spike_times.get_label(label_x).linspace(bins=bins)
+                bins_x = self.spike_times.get_label(label_y).linspace_bins(bins=bins)
+                bins_y = self.spike_times.get_label(label_x).linspace_bins(bins=bins)
                 H,xed,yed = np.histogram2d(self.spike_times[label_x],self.spike_times[label_y],bins=(bins_x,bins_y),weights=weights)
             if normalize_time:
                 H = H/(self.spike_times.labels[0].len())
@@ -787,7 +811,7 @@ class SpikeContainer:
             bins = converted_dimension.linspace_by_resolution(resolution)
             H,edg = np.histogram(st,bins=bins)
             if normalize_time:
-                H = H/(convert_time(converted_dimension.len(),from_units=units,to_units='s')*resolution) # make it Hertz
+                H = H/(convert_time(resolution,from_units=units,to_units='s')) # make it Hertz
             return H,edg
     def smoothed_temporal_firing_rate(self, gaussian_width=10.0, **kwargs):
         if self.data_format == 'spike_times':
@@ -963,5 +987,32 @@ class SpikeContainer:
         return pl.plot(
                     sc.get_spike_array_index(resolution=resolution,units=units,min_t=min_t,max_t=max_t),
                     sc.get_spike_array(resolution=resolution,units=units,min_t=min_t,max_t=max_t),**kwargs)
+    def create_SpikeGeneratorGroup(self,time_label=0,index_label=1,reorder_indices=False,index_offset=None):
+        """
+            Creates a brian 2 create_SpikeGeneratorGroup object that contains the spikes in this container.
+
+                time_label:     Name or number of the label that contains the spike times (default: 0 / first column)
+                index_label:    Name or number of the label that contains the cell indices (default: 1 / the second column)
+                reorder_indices:   If the cell indices do not matter, the SpikeGeneratorGroup can be created with only as many unique neurons as necessary (default: False / The indices are preserved)
+                index_offset:      If set to a number, this will be subtracted from every index (None)
+                                   If set to True, the `.min` of the label dimension will be subtracted.
+        """
+        import brian2
+        spike_times = self.spike_times.convert(time_label,'s')[time_label]*brian2.second
+        indices = [0] * len(spike_times)
+        if len(self.spike_times.find_labels(index_label)):
+            indices = self.spike_times[index_label]
+        if index_offset is not None and index_offset is not False:
+            if index_offset is not None:
+                indices = indices - self.spike_times.get_label(index_label).min
+            else:
+                indices = indices - index_offset
+        N = np.max(indices)
+        if reorder_indices:
+            indices_levels = np.sort(np.unique(indices)).tolist()
+            indices = np.array([indices_levels.index(i) for i in indices])
+            N = len(indices_levels)
+        return brian2.SpikeGeneratorGroup(N,indices = indices,
+                                            times = spike_times)
 
 
