@@ -1,5 +1,4 @@
 import xml.etree.ElementTree as ET
-from matplotlib.pylab import *
 import scipy
 import math
 import numpy as np
@@ -288,7 +287,7 @@ class LabelDimension(object):
         return bins
     def linspace_by_resolution(self,resolution=1.0,units=None,conversion_function=convert_time):
         return self.linspace(bins=None,resolution=resolution,units=units,conversion_function=conversion_function)
-    def convert(self,units=None):
+    def convert(self,units=None,conversion_function=convert_time):
         min = conversion_function(self.min,from_units=self.units,to_units=units)
         max = conversion_function(self.max,from_units=self.units,to_units=units)
         return LabelDimension(self.name, units, min, max)
@@ -469,6 +468,24 @@ class LabeledMatrix(object):
     def __nonzero__(self):
         return self.matrix.shape[0] > 0
     def generate(self,*args,**kwargs):
+        """
+        Creates an iterator over one of the index dimensions of the object.
+
+        Example::
+
+            for l in s.generate('layer',preserve_labels=True,resolution=2):
+                # taking two layers at a time
+                print l
+
+            preserve_labels: False
+                Whether the labels that are used for generation should be kept in the generated objects.
+            resolution:     None
+                If set to an integer, the dimension used for generation will be split into parts of size `resolution`.
+            bins:           None
+                If set to an integer, the dimension used for generation will be split into `bins` many, equal parts.
+            reversed:       True
+                Whether argument list should be reversed, such that the first argument is rotated first.
+        """
         constraints = []
         preserve_labels = kwargs.get('preserve_labels',False)
         resolution = kwargs.get('resolution',None) 
@@ -732,32 +749,7 @@ class SpikeContainer:
             if len(spike_times.shape) == 0:
                 spike_times = np.array([spike_times])
             self.set_spike_times(spike_times, units=units,min_t=min_t,max_t=max_t,data_units=data_units)
-    def spatial_firing_rate(self,cells_per_bin=1,geometry=None,weight_function=None,normalize_time=True,normalize_n=False,start_units_with_0=True):
-        """
-
-                imshow(s.spatial_firing_rate(weight_function=lambda x: (x[:,1]>0.5)*(x[:,1]<0.6)))
-
-        """
-        if self.data_format == 'spike_times':
-            if geometry is None:
-                geometry = self.geometry
-            if len(self.spikes) == 0:
-                return np.zeros((ceil(geometry[0]/cells_per_bin),ceil(geometry[1]/cells_per_bin)))
-            if weight_function is None:
-                H,xed,yed = np.histogram2d(self.spikes[:,0]/int(np.prod(geometry[1:])),self.spikes[:,0]%int(np.prod(geometry[1:])),bins=(ceil(geometry[0]/cells_per_bin),ceil(np.prod(geometry[1:])/cells_per_bin)))
-            else:
-                if start_units_with_0:
-                    spike_numbers = np.transpose([self.spikes[:,0]-self.n_range[0],self.spikes[:,1]])
-                    weights = weight_function(spike_numbers)
-                else:
-                    weights = weight_function(self.spikes[:,:])
-                H,xed,yed = np.histogram2d(self.spikes[:,0]/int(np.prod(geometry[1:])),self.spikes[:,0]%int(np.prod(geometry[1:])),bins=(ceil(geometry[0]/cells_per_bin),ceil(np.prod(geometry[1:])/cells_per_bin)),weights=weights)
-            if normalize_time:
-                H = H/self.t_len()
-            if normalize_n:
-                H = H/cells_per_bin
-            return H
-    def spatial_firing_rate_by_label(self,label_x='x',label_y='y',bins=10,geometry=None,weight_function=None,normalize_time=True,normalize_n=False,start_units_with_0=True):
+    def spatial_firing_rate(self,label_x='x',label_y='y',bins=10,geometry=None,weight_function=None,normalize_time=True,normalize_n=False,start_units_with_0=True):
         """
 
                 imshow(s.spatial_firing_rate(weight_function=lambda x: (x[:,1]>0.5)*(x[:,1]<0.6)))
@@ -779,13 +771,25 @@ class SpikeContainer:
                 bins_y = self.spike_times.get_label(label_x).linspace_bins(bins=bins)
                 H,xed,yed = np.histogram2d(self.spike_times[label_x],self.spike_times[label_y],bins=(bins_x,bins_y),weights=weights)
             if normalize_time:
-                H = H/(self.spike_times.labels[0].len())
+                H = H/(self.spike_times.labels[0].convert('s').len())
             if normalize_n:
                 H = H/cells_per_bin
             return H,xed,yed
         else:
             return ([[0]],[0],[0])
-    def temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=False,start_units_with_0=True):
+    def plot_spatial_firing_rate(self,label_x='x',label_y='y',bins=10,geometry=None,weight_function=None,normalize_time=True,normalize_n=False,start_units_with_0=True,**kwargs):
+        """
+
+
+        """
+        if bool(self):
+            import matplotlib.pylab as plt
+            H,xed,yed = self.spatial_firing_rate(label_x=label_x,label_y=label_y,bins=bins,geometry=geometry,weight_function=weight_function,normalize_time=normalize_time,normalize_n=False,start_units_with_0=start_units_with_0)
+            X, Y = np.meshgrid(xed, yed)
+            kwargs['cmap'] = kwargs.get('cmap','gray')
+            plt.pcolormesh(X, Y, H,**kwargs)
+            plt.gca().set_aspect('equal')
+    def temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N'):
         """
             Outputs a time histogram of spikes.
 
@@ -795,7 +799,7 @@ class SpikeContainer:
                     weight_function = lambda x: weight_map.flatten()[array(x[:,0],dtype=int)]
 
             `normalize_time`
-            `normalize_n`:  normalize by the length of time (such that normal output is Hz) and/or number of units (such that output is Hz/unit)
+            `normalize_n`:  normalize by the length of time (such that normal output is Hz) and/or number of units (such that output is Hz/unit, determined with unique values in cell_dimension)
                             Generally does not make sense when using a weight_function other than 'count'.
 
             `start_units_with_0`: starts indizes from 0 instead from the actual index
@@ -812,13 +816,35 @@ class SpikeContainer:
             H,edg = np.histogram(st,bins=bins)
             if normalize_time:
                 H = H/(convert_time(resolution,from_units=units,to_units='s')) # make it Hertz
+            if normalize_n:
+                H = H/(len(unique(self.spike_times[cell_dimension])))
             return H,edg
+    def plot_temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N',**kwargs):
+        """
+
+
+        """
+        if bool(self):
+            import matplotlib.pylab as plt
+            H,ed = self.temporal_firing_rate(time_dimension=time_dimension,resolution=resolution,units=units,min_t=min_t,max_t=max_t,weight_function=weight_function,normalize_time=normalize_time,normalize_n=normalize_n,start_units_with_0=start_units_with_0,cell_dimension=cell_dimension)
+            plt.plot(ed[1:],H,**kwargs)
     def smoothed_temporal_firing_rate(self, gaussian_width=10.0, **kwargs):
         if self.data_format == 'spike_times':
             from scipy.ndimage import gaussian_filter1d
             H, xed = self.temporal_firing_rate(**kwargs)
             firing_rates = gaussian_filter1d(H,gaussian_width)
             return firing_rates, xed
+    def plot_smoothed_temporal_firing_rate(self, gaussian_width=10.0,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N',**kwargs):
+        """
+
+
+        """
+        if bool(self):
+            import matplotlib.pylab as plt
+            from scipy.ndimage import gaussian_filter1d
+            H,ed = self.temporal_firing_rate(time_dimension=time_dimension,resolution=resolution,units=units,min_t=min_t,max_t=max_t,weight_function=weight_function,normalize_time=normalize_time,normalize_n=normalize_n,start_units_with_0=start_units_with_0,cell_dimension=cell_dimension)
+            firing_rates = gaussian_filter1d(H,gaussian_width)
+            plt.plot(ed[1:],firing_rates,**kwargs)
     def __call__(self,**kwargs):
         return SpikeContainer(self.spike_times(**kwargs), copy_from=self)
     def add_label(self,name,label_data):
@@ -845,6 +871,34 @@ class SpikeContainer:
             new_index = cartesian_to_index(self.spike_times[:,len(self.time_dimensions):])
         self.add_label(name, new_index)
     def generate(self,*args,**kwargs):
+        """
+        Creates an iterator over one of the index dimensions of the object.
+
+        Example for a discrete variable::
+
+            for l in s.generate('layer',preserve_labels=True,resolution=2):
+                # taking two layers at a time
+                print l
+
+        Example for two continuous variables::
+
+            for l in s.generate('x','y',preserve_labels=True,bins=3,reversed=True):
+                # will generate x0,y0 | x1,y0 | x2,y0 | x0,y1 | x1,y1 | ...
+                # (default is reversed=True)
+                print l
+            for l in s.generate('x','y',preserve_labels=True,bins=3,reversed=False):
+                # will generate x0,y0 | x0,y1 | x0,y2 | x1,y0 | x1,y1 | ...
+                print l
+
+        preserve_labels: False
+            Whether the labels that are used for generation should be kept in the generated objects.
+        resolution:     None
+            If set to an integer, the dimension used for generation will be split into parts of size `resolution`.
+        bins:           None
+            If set to an integer, the dimension used for generation will be split into `bins` many, equal parts.
+        reversed:       True
+            Whether argument list should be reversed, such that the first argument is rotated first.
+        """
         for st in self.spike_times.generate(*args,**kwargs):
             yield SpikeContainer(st, copy_from=self)
     def len(self,*args,**kwargs):
@@ -860,6 +914,8 @@ class SpikeContainer:
         if type(key) is str:
             found_keys = []
             for label_no,label in enumerate(self.spike_times.labels):
+                    if key == label.name:
+                        return [label_no]
                     if key in label.name:
                         found_keys.append(label_no)
             if found_keys is not []:
@@ -867,9 +923,18 @@ class SpikeContainer:
         return [key]
     def _find_key(self,key):
         if type(key) is str:
+            found_keys = []
             for label_no,label in enumerate(self.spike_times.labels):
-                    if key in label.name:
+                    if key == label.name:
                         return label_no
+                    if key in label.name:
+                        found_keys.append(label_no)
+            if len(found_keys) == 1:
+                return found_keys
+            if len(found_keys) > 1:
+                import warnings
+                warnings.warn("Key has multiple matches, but none is exact! Returning first match. (This might not be consistent)")
+                return found_keys[0]
         return key
     def __getitem__(self, key):
         if type(key) is tuple:
