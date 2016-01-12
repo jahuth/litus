@@ -1,5 +1,4 @@
 import xml.etree.ElementTree as ET
-from matplotlib.pylab import *
 import scipy
 import math
 import numpy as np
