@@ -473,12 +473,12 @@ class LabeledMatrix(object):
 
         Example::
 
-            for l in s.generate('layer',preserve_labels=True,resolution=2):
+            for l in s.generate('layer',remove_dimensions=False,resolution=2):
                 # taking two layers at a time
                 print l
 
-            preserve_labels: False
-                Whether the labels that are used for generation should be kept in the generated objects.
+            remove_dimensions: False
+                Whether the labels that are used for generation should be removed from the generated objects.
             resolution:     None
                 If set to an integer, the dimension used for generation will be split into parts of size `resolution`.
             bins:           None
@@ -487,7 +487,7 @@ class LabeledMatrix(object):
                 Whether argument list should be reversed, such that the first argument is rotated first.
         """
         constraints = []
-        preserve_labels = kwargs.get('preserve_labels',False)
+        remove_dimensions = kwargs.get('remove_dimensions',False)
         resolution = kwargs.get('resolution',None) 
         bins = kwargs.get('bins',None) 
         if len(args) == 0:
@@ -502,10 +502,7 @@ class LabeledMatrix(object):
             constraints = {}
             for ri, i in enumerate(generator_indizes):
                 constraints.update(t[ri])
-            if preserve_labels:
-                yield self(remove_dimensions=False, **constraints)
-            else:
-                yield self(remove_dimensions=True, **constraints)
+            yield self(remove_dimensions=remove_dimensions, **constraints)
 
 
 class SpikeContainer:
@@ -876,22 +873,22 @@ class SpikeContainer:
 
         Example for a discrete variable::
 
-            for l in s.generate('layer',preserve_labels=True,resolution=2):
+            for l in s.generate('layer',remove_dimensions=False,resolution=2):
                 # taking two layers at a time
                 print l
 
         Example for two continuous variables::
 
-            for l in s.generate('x','y',preserve_labels=True,bins=3,reversed=True):
+            for l in s.generate('x','y',remove_dimensions=False,bins=3,reversed=True):
                 # will generate x0,y0 | x1,y0 | x2,y0 | x0,y1 | x1,y1 | ...
                 # (default is reversed=True)
                 print l
-            for l in s.generate('x','y',preserve_labels=True,bins=3,reversed=False):
+            for l in s.generate('x','y',remove_dimensions=False,bins=3,reversed=False):
                 # will generate x0,y0 | x0,y1 | x0,y2 | x1,y0 | x1,y1 | ...
                 print l
 
-        preserve_labels: False
-            Whether the labels that are used for generation should be kept in the generated objects.
+        remove_dimensions: False
+            Whether the labels that are used for generation should be removed in the generated objects.
         resolution:     None
             If set to an integer, the dimension used for generation will be split into parts of size `resolution`.
         bins:           None
@@ -903,7 +900,6 @@ class SpikeContainer:
             yield SpikeContainer(st, copy_from=self)
     def len(self,*args,**kwargs):
         constraints = []
-        preserve_labels = kwargs.get('preserve_labels',False)
         if len(args) == 0 or args == None:
             generator_indizes = range(1,len(self.spike_times.labels))
         else:
