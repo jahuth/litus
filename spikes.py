@@ -1048,32 +1048,35 @@ class SpikeContainer:
         return pl.plot(
                     sc.get_spike_array_index(resolution=resolution,units=units,min_t=min_t,max_t=max_t),
                     sc.get_spike_array(resolution=resolution,units=units,min_t=min_t,max_t=max_t),**kwargs)
-    def create_SpikeGeneratorGroup(self,time_label=0,index_label=1,reorder_indices=False,index_offset=None):
+    def create_SpikeGeneratorGroup(self,time_label=0,index_label=1,reorder_indices=False,index_offset=True):
         """
             Creates a brian 2 create_SpikeGeneratorGroup object that contains the spikes in this container.
 
                 time_label:     Name or number of the label that contains the spike times (default: 0 / first column)
                 index_label:    Name or number of the label that contains the cell indices (default: 1 / the second column)
                 reorder_indices:   If the cell indices do not matter, the SpikeGeneratorGroup can be created with only as many unique neurons as necessary (default: False / The indices are preserved)
-                index_offset:      If set to a number, this will be subtracted from every index (None)
+                index_offset:      If set to a number, this will be subtracted from every index (default: True)
                                    If set to True, the `.min` of the label dimension will be subtracted.
+                                   If set to False, nothing will be subtracted.
         """
         import brian2
         spike_times = self.spike_times.convert(time_label,'s')[time_label]*brian2.second
         indices = [0] * len(spike_times)
         if len(self.spike_times.find_labels(index_label)):
             indices = self.spike_times[index_label]
-        if index_offset is not None and index_offset is not False:
-            if index_offset is not None:
+        if index_offset is not False:
+            if index_offset is True:
                 indices = indices - self.spike_times.get_label(index_label).min
             else:
                 indices = indices - index_offset
-        N = np.max(indices)
+            N = np.max(indices)
+        else:
+            N = self.spike_times.get_label(index_label).max
         if reorder_indices:
             indices_levels = np.sort(np.unique(indices)).tolist()
             indices = np.array([indices_levels.index(i) for i in indices])
             N = len(indices_levels)
-        return brian2.SpikeGeneratorGroup(N,indices = indices,
+        return brian2.SpikeGeneratorGroup(N+1,indices = indices,
                                             times = spike_times)
 
 
