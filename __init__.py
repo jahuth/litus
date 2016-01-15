@@ -52,6 +52,49 @@ def unsnip(tag=None,start=-1):
         if len(_last_inputs) > 0:
             i.set_next_input(_last_inputs[start])
 
+def animate(a,r=25,every_nth_frame=5,cmap='gray',tmp_dir='tmp',frame_prefix='frame_',animation_name='animation.mp4',func=None):
+    import os,io,glob
+    import base64
+    import matplotlib.pylab as plt
+    from IPython.display import HTML
+    try:
+        import tqdm
+        trange = tqdm.trange
+    except:
+        tqdm = None
+        trange = xrange
+    try:
+        os.mkdir(tmp_dir)
+    except:
+        pass
+    for f in glob.glob(tmp_dir+'/'+frame_prefix+'*.png'):
+        os.remove(f)
+    try:
+        os.remove(tmp_dir+'/'+animation_name)
+    except:
+        pass
+    if func == None:
+        max_shape = np.max([aa.shape for aa in a if type(aa)==np.ndarray],0)
+
+    for ti,t in enumerate(trange(0,len(a),every_nth_frame)):
+        if func == None:
+            plt.figure()
+            plt.title(ti)
+            if type(a[t]) == list:
+                a[t] = np.zeros(max_shape)
+            plt.imshow(a[t],cmap=cmap,vmin=np.min(a),vmax=np.max(a))
+            plt.axis('off')
+        else:
+            func(a[t])
+        plt.savefig(tmp_dir+'/'+frame_prefix+'%04d.png'%ti)
+        plt.close()
+    os.system("avconv -i "+tmp_dir+'/'+frame_prefix+"%04d.png -r "+str(r)+" "+tmp_dir+'/'+animation_name)
+    video = io.open(tmp_dir+'/'+animation_name, 'r+b').read()
+    encoded = base64.b64encode(video)
+    return HTML(data='''<video alt="test" autoplay loop controls>
+                    <source src="data:video/mp4;base64,{0}" type="video/mp4" />
+                 </video>'''.format(encoded.decode('ascii')))
+
 
 #############################################
 ## Sort things with numbers in them
