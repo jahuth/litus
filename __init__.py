@@ -377,3 +377,169 @@ def colorate(sequence, colormap="", start=0):
     for elem in sequence:
         yield n, colors[n-start], elem
         n += 1
+
+
+#################################################
+## Parameter / Data Collectors
+##
+##  They still need a catchy name!
+##
+
+
+def unnpfy(x):
+    if type(x) is dict:
+        return {k:unnpfy(x[k]) for k in x.keys()}
+    if type(x) is np.ndarray:
+        return x.tolist()
+    if type(x) in [np.int,np.int16,np.int32,np.int64,np.int8]:
+        return int(x)
+    if type(x) in [np.float,np.float16,np.float32,np.float64,np.float128]:
+        return float(x)
+    return x
+
+class PDFileHandler(object):
+    def __init__(self,parent=None):
+        self.parent = parent
+    def __call__(self,key):
+        if key not in self.parent.files.keys():
+            self.parent.files[key] = self.parent.parent.create_path(self.parent,key)
+            self.parent.parent.save()
+        import os
+        if not os.path.exists("/".join(self.parent.files[key].split("/")[:-1])):
+            os.makedirs("/".join(self.parent.files[key].split("/")[:-1]))
+        return self.parent.files[key]
+    def __getitem__(self,key):
+        filename = self(key)
+        if filename.endswith('.npz') or filename.endswith('.npy'):
+            o = np.load(filename)
+            if type(o) == np.lib.npyio.NpzFile:
+                if o.keys() == ['arr_0']:
+                    return o['arr_0']
+            return o
+        elif filename.endswith('.json'):
+            import json
+            with open(filename,'r') as f:
+                return json.load(value,f)
+        else:
+            with open(filename,'r') as f:
+                return f.read()
+    def __setitem__(self,key,value):
+        filename = self(key)
+        if filename.endswith('.npz'):
+            if type(value) == dict:
+                np.savez(filename,**value)
+            else:
+                np.savez(filename,np.array(value))
+        elif filename.endswith('.npy'):
+            np.save(filename,np.array(value))
+        elif filename.endswith('.json'):
+            import json
+            with open(filename,'w') as f:
+                json.dump(value,f)
+        else:
+            with open(filename,'w') as f:
+                f.write(str(value))
+
+class PDContainer(object):
+    def __init__(self,name=None,params=None,files=None,data=None,parent=None):
+        self.name = name
+        self.parameters = params
+        self.files = files
+        self.data = data
+        self.parent = parent
+        if self.parameters is None:
+            self.parameters = {}
+        if self.files is None:
+            self.files = {}
+        if self.data is None:
+            self.data = {}
+        if self.name is None:
+            self.name = "_".join([str(k) + ":"+ str(self.parameters[k]) for k in self.parameters.keys()])
+        self.file = PDFileHandler(self)
+    def param(self,key,default=None):
+        """for accessing parameters"""
+        if key in self.parameters:
+            return self.parameters[key]
+        return self.parent.param(key,default)
+    def __getitem__(self,key):
+        return self.data[key]
+    def __setitem__(self,key,value):
+        self.data[key] = value
+        self.parent.save()
+    def dumpd(self):
+        return { 'name': str(self.name), 'parameters': self.parameters, 'files': self.files, 'data': self.data }
+    def loadd(self,d):
+        print d
+        self.__dict__.update(d)
+        return self
+    def open(self,key,*args):
+        return open(self.file(key),*args)
+    """def file(self,key,*args):
+        if key not in self.files.keys():
+            self.files[key] = self.parent.create_path(self,key)
+            self.parent.save()
+        import os
+        if not os.path.exists("/".join(self.files[key].split("/")[:-1])):
+            os.makedirs("/".join(self.files[key].split("/")[:-1]))
+        return self.files[key]"""
+
+
+class PDContainerList(object):
+    def __init__(self,path="",filename=None, name_mode = 'int', parameters = None):
+        self.path = path
+        self.name_mode = name_mode
+        import os
+        if not os.path.exists(self.path):
+            os.makedirs(self.path)
+        self.filename = filename
+        self.containers = []
+        self.parameters = parameters
+        if self.parameters is None:
+            self.parameters = {}
+    def generate(self,**kwargs):
+        """run once to create all children containers for each combination of the keywords"""
+        import collections
+        all_params = cartesian_dicts({k:kwargs[k] for k in kwargs.keys() if isinstance(kwargs[k], collections.Iterable)})
+        for pi,p in enumerate(all_params):
+            if self.name_mode == 'int':
+                n = str(pi)
+            else:
+                n = None
+            self.containers.append(PDContainer(name=n,params=p,parent=self))
+        self.parameters.update({ k: kwargs[k] for k in kwargs.keys() if not isinstance(kwargs[k], collections.Iterable) })
+        self.save()
+    def find(self,**kwargs):
+        results = []
+        for c in self.containers:
+            match = True
+            for k in kwargs.keys():
+                if c.param(k) != kwargs[k]:
+                    match = False
+                    break
+            if match:
+                results.append(c)
+        return results
+    def __iter__(self):
+        return self.containers.__iter__()
+    def save(self):
+        import yaml
+        cs = yaml.dump([unnpfy(c.dumpd()) for c in self.containers])
+        if self.filename is None:
+            return cs
+        with open(self.path+"/"+self.filename,'w') as f:
+            f.write(cs)
+    def load(self):
+        import yaml
+        self.containers = []
+        with open(self.path+"/"+self.filename,'r') as f:
+            for c in yaml.load(f):
+                pd = PDContainer(parent=self)
+                self.containers.append(pd.loadd(c))
+        return self
+    def create_path(self,container,key):
+        return self.path+"/."+ container.name + "_" + key
+    def param(self,key,default=None):
+        """for accessing global parameters"""
+        if key in self.parameters:
+            return self.parameters[key]
+        return default
