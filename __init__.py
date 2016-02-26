@@ -386,9 +386,9 @@ def colorate(sequence, colormap="", start=0):
 ##
 
 
-def unnpfy(x):
+def unnumpyfy(x):
     if type(x) is dict:
-        return {k:unnpfy(x[k]) for k in x.keys()}
+        return {k:unnumpyfy(x[k]) for k in x.keys()}
     if type(x) is np.ndarray:
         return x.tolist()
     if type(x) in [np.int,np.int16,np.int32,np.int64,np.int8]:
@@ -409,13 +409,27 @@ class PDFileHandler(object):
             os.makedirs("/".join(self.parent.files[key].split("/")[:-1]))
         return self.parent.files[key]
     def __getitem__(self,key):
+        secondary_keys = []
+        if type(key) is tuple:
+            secondary_keys = key[1:]
+            key = key[0]
         filename = self(key)
         if filename.endswith('.npz') or filename.endswith('.npy'):
             o = np.load(filename)
+            r = o
             if type(o) == np.lib.npyio.NpzFile:
-                if o.keys() == ['arr_0']:
-                    return o['arr_0']
-            return o
+                if len(secondary_keys) > 0:
+                    if len(secondary_keys) > 1:
+                        r = {k: o[k] for k in secondary_keys if k in o.keys()}
+                    else:
+                        r = o[secondary_keys[0]]
+                else:
+                    if o.keys() == ['arr_0']:
+                        r = o['arr_0']
+                    else:
+                        r = {k: o[k] for k in o.keys()}
+                o.close()
+            return r
         elif filename.endswith('.json'):
             import json
             with open(filename,'r') as f:
@@ -469,7 +483,6 @@ class PDContainer(object):
     def dumpd(self):
         return { 'name': str(self.name), 'parameters': self.parameters, 'files': self.files, 'data': self.data }
     def loadd(self,d):
-        print d
         self.__dict__.update(d)
         return self
     def open(self,key,*args):
@@ -502,7 +515,7 @@ class PDContainerList(object):
         all_params = cartesian_dicts({k:kwargs[k] for k in kwargs.keys() if isinstance(kwargs[k], collections.Iterable)})
         for pi,p in enumerate(all_params):
             if self.name_mode == 'int':
-                n = str(pi)
+                n = str(len(self.containers))
             else:
                 n = None
             self.containers.append(PDContainer(name=n,params=p,parent=self))
@@ -523,7 +536,7 @@ class PDContainerList(object):
         return self.containers.__iter__()
     def save(self):
         import yaml
-        cs = yaml.dump([unnpfy(c.dumpd()) for c in self.containers])
+        cs = yaml.dump([unnumpyfy(c.dumpd()) for c in self.containers] + [{'root_parameters':unnumpyfy(self.parameters)}])
         if self.filename is None:
             return cs
         with open(self.path+"/"+self.filename,'w') as f:
@@ -533,8 +546,13 @@ class PDContainerList(object):
         self.containers = []
         with open(self.path+"/"+self.filename,'r') as f:
             for c in yaml.load(f):
-                pd = PDContainer(parent=self)
-                self.containers.append(pd.loadd(c))
+                if 'name' in c.keys():
+                    pd = PDContainer(parent=self)
+                    self.containers.append(pd.loadd(c))
+                else:
+                    if 'root_parameters' in c.keys():
+                        self.parameters.update(c['root_parameters'])
+                    # otherwise maybe a Warning? Maybe not?
         return self
     def create_path(self,container,key):
         return self.path+"/."+ container.name + "_" + key
