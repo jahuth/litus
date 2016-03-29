@@ -97,7 +97,7 @@ def animate(a,r=25,every_nth_frame=5,cmap='gray',tmp_dir='tmp',frame_prefix='fra
 
 
 #############################################
-## Sort things with numbers in them
+## Alert someone
 
 def alert(msg,body="",icon="/home/jacob/Projects/Silversight/icons/kernel.svg"):
     """
@@ -561,3 +561,170 @@ class PDContainerList(object):
         if key in self.parameters:
             return self.parameters[key]
         return default
+
+
+class Lists:
+    """
+
+    This class provides nested Lists that can be turned into n-dimensional numpy arrays.
+    The class is not and does not behave a like a numpy array.
+
+    When called as a context manager (with `with ... as ...:`), a new list 
+    is added and reference to the new list is returned. Arbitrary things can be added to
+    the list and once the context is closed the list itself is appended to the 
+    list one layer higher in the hierarchy.
+
+    To structure data, context manager calls can be used inside each other to nest the lists.
+    In this case, only the innermost list should be used, such that the resulting 
+    nested list has equal dimensions in all elements.
+
+    To access the latest list (after a context block was closed), `array()` 
+    can be used.  `array()` takes an index argument `n` which list should be taken, so `array(-2)` 
+    gives the list from the previous iteration.
+    The first layer (-0) of the list is hidden: even outside of all context managers the 
+    default will give you the list of the last closed context.
+    If instead all lists should be accessed while the context block 
+    is active (or the object is used outside of a context block), you can either
+    access the `.list` attribute itself or call `.array(None)`.
+
+    The functions `.transpose()` and `.mean()` also accept `n` as an argument and 
+    behave identical to `.array(n).transpose()` and `.array(n).mean(dims)`.
+    Note that `transpose` inverts the order of all the dimensions.
+
+    Example (recommended usage)::
+
+        import litus
+        reload(litus)
+        lc = litus.Lists()
+        with lc('First'):
+            for k in range(2):
+                with lc('Second'):
+                    for j in range(2):
+                        with lc('Third') as l:
+                            for i in range(2):
+                                    l.append(i+j*10+k*100)
+        print lc.array()
+        print lc.array().shape
+        print lc['Second'] # index of named dimension
+        print lc.mean((1,2))
+
+
+    Gives::
+
+        [[[  0   1]
+          [ 10  11]]
+
+         [[100 101]
+          [110 111]]]
+        (2, 2, 2)
+        1
+        [   5.5  105.5]
+
+
+    The object contains a `stack` of the hierarchically ordered lists, such that when
+    a context is closed, the active `list` is appended.
+
+    To make things more complicated, you can also use `+= n` and `-= n` to 
+    enter or exit `n` many contexts. `a_list = list_obj + 1` evaluates to 
+    the newly created list. If you use this feature you have to make sure yourself that
+    you get out of all the contexts that you created. In turn, this does not require
+    you to indent your code. Also you can quickly create ndarrays of certain shapes::
+
+
+        lc = litus.Lists()
+        for k in range(2):
+            lc+=3 # indent three times
+            for j in range(2):
+                l = lc+1 # indent once more and return the list
+                for i in range(2):
+                        l.append(i+j*10+k*100)
+                lc-= 1
+            lc-=3
+        lc-=2 # de-indet twice to close the context and add an extra dimension
+        print lc.array().shape
+
+    Output::
+
+        (1, 2, 1, 1, 2, 2)
+
+    Unlike the normal exit from a context, if the stack is empty, the list is inserted 
+    into an empty list. (Thus, subtraction and contexts are not fully interchangable)
+    It might be a good idea to add comments to the code when using this feature.
+
+    """
+    def __init__(self):
+        self.stack = []
+        self.list = []
+        self.dimension_names = []
+        self.dimension_values = []
+    def array(self,n=-1):
+        """returns a numpy array created from the list that was closed last (if `n`=-1).
+        If `n` is None, the lists of the current level are returned as an array.
+        Other lists in the current level can also be accessed with `n` as the specific index.
+        """
+        if n is None:
+            return np.array(self.list)
+        return np.array(self.list)[n]
+    def transpose(self,n=-1):
+        return self.array(n).transpose()
+    def mean(self,dims=None,n=-1):
+        return np.mean(self.array(n),dims)
+    def __getitem__(self,key):
+        for i,n in enumerate(self.dimension_names):
+            if n == key:
+                return i
+        raise Exception("Did not find key")
+    def __call__(self,dimension_name='',dimension_values=None):
+        if len(self.dimension_names) <= len(self.stack):
+            self.dimension_names.append(dimension_name)
+            self.dimension_values.append(dimension_values)
+        else:
+            self.dimension_names[len(self.stack)] = dimension_name
+            self.dimension_values[len(self.stack)] = dimension_values
+        return self
+    def __iadd__(self,n):
+        if n < 0:
+            return self.__isub__(-n)
+        for i in range(n):
+            self.__enter__()
+        return self
+    def __add__(self,n):
+        if n < 0:
+            return self.__sub__(-n)
+        for i in range(n):
+            l = self.__enter__()
+        return l
+    def __isub__(self,n):
+        if n < 0:
+            return self.__iadd__(-n)
+        for i in range(n):
+            if len(self.stack) == 0:
+                self.stack = [[]]
+            self.__exit__(None,None,None)
+        return self
+    def __sub__(self,n):
+        if n < 0:
+            return self.__add__(-n)
+        for i in range(n):
+            if len(self.stack) == 0:
+                self.stack = [[]]
+            self.__exit__(None,None,None)
+        return self
+    def __enter__(self):
+        self.stack.append(self.list)
+        self.list = []
+        return self.list
+    def __exit__(self, type, value, tb):
+        if len(self.stack) > 0:
+            l = self.list
+            self.list = self.stack[-1]
+            self.list.append(l)
+            self.stack.pop()
+        if tb is None:
+            pass
+        else:
+            return False
+    def exit_all(self):
+        "Leaves all unclosed contexts."
+        while len(self.stack) > 0:
+            self.__exit__(None,None,None)
