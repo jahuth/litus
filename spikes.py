@@ -814,7 +814,7 @@ class SpikeContainer:
             if normalize_time:
                 H = H/(convert_time(resolution,from_units=units,to_units='s')) # make it Hertz
             if normalize_n:
-                H = H/(len(unique(self.spike_times[cell_dimension])))
+                H = H/(len(np.unique(self.spike_times[cell_dimension])))
             return H,edg
     def plot_temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N',**kwargs):
         """
