@@ -19,6 +19,14 @@ def _lines_as_comments(s):
     return "\n".join(["# "+l for l in s.split("\n")])
 
 def snip(tag="",start=-2,write_date=True):
+    """ 
+        This function records a previously execute notebook cell into a file (default: ipython_history.py)
+
+        a tag can be added to sort the cell
+
+        `start` defines which cell in the history to record. Default is -2, ie. the one executed previously to the current one.
+
+    """
     import IPython
     i = IPython.get_ipython()
     last_history = i.history_manager.get_range(start=start,stop=start+1,output=True)
@@ -40,9 +48,11 @@ def snip(tag="",start=-2,write_date=True):
             output_file.write('\n\n# Out ['+str(l[1])+']:\n'+_lines_as_comments(repr(l[2][1])))
 
 def snip_this(tag="",write_date=True):
+    """ When this function is invoced in a notebook cell, the cell is snipped. """
     snip(tag=tag,start=-1,write_date=write_date)
 
 def unsnip(tag=None,start=-1):
+    """ This function retrieves a tagged or untagged snippet. """
     import IPython
     i = IPython.get_ipython()
     if tag in _tagged_inputs.keys():
