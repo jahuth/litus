@@ -818,13 +818,27 @@ class SpikeContainer:
             return H,edg
     def plot_temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N',**kwargs):
         """
+            Plots a firing rate plot.
 
-
+            Accepts the same keyword arguments as :func:`matplotlib.pylab.plot()` for lines (:class:`~matplotlib.lines.Line2D`), eg `color`, `linewidth` (or `lw`), `linestyle` (or `ls`).
+            See help for :func:`matplotlib.pylab.plot()`.
         """
         if bool(self):
             import matplotlib.pylab as plt
             H,ed = self.temporal_firing_rate(time_dimension=time_dimension,resolution=resolution,units=units,min_t=min_t,max_t=max_t,weight_function=weight_function,normalize_time=normalize_time,normalize_n=normalize_n,start_units_with_0=start_units_with_0,cell_dimension=cell_dimension)
             plt.plot(ed[1:],H,**kwargs)
+    def plot_raster(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N',**kwargs):
+        """
+            Plots a raster plot.
+
+            Accepts the same keyword arguments as matplotlib.pylab.plot() for points, eg. `marker`,
+            `markerfacecolor`, `markersize` (or `ms`), `markeredgecolor`.
+            See help for :func:`matplotlib.pylab.plot()`.
+        """
+        if bool(self):
+            import matplotlib.pylab as plt
+            plt.plot(self[time_dimension],self[cell_dimension],'.',**kwargs)
+            plt.xlim(min_t, max_t)
     def smoothed_temporal_firing_rate(self, gaussian_width=10.0, **kwargs):
         if self.data_format == 'spike_times':
             from scipy.ndimage import gaussian_filter1d
@@ -845,19 +859,8 @@ class SpikeContainer:
     def __call__(self,**kwargs):
         return SpikeContainer(self.spike_times(**kwargs), copy_from=self)
     def add_label(self,name,label_data):
-        if self.data_format == 'spike_times':
-            if name in self.spike_times.labels:
-                raise Exception('Already labeled with "'+str(name)+': '+str(self.spike_times.labels)+'"!')
-                return
-            if len(label_data.shape) == 1:
-                self.spike_times.labels.append(str(name))
-                self.index_dimensions = np.concatenate([self.index_dimensions,np.max(label_data[:,np.newaxis],0)+1],1)                
-                self.spike_times = np.concatenate([self.spike_times,label_data[:,np.newaxis]],1)
-            if len(label_data.shape) == 2:
-                if type(name) is list or type(name) is tuple:
-                    self.spike_times.labels.extend(name)
-                    self.index_dimensions = np.concatenate([self.index_dimensions,np.max(label_data,0)+1],1)                
-                    self.spike_times = np.concatenate([self.spike_times,label_data],1)                
+        self.spike_times.add_label_dimension(name,label_data)
+        return               
     def add_index(self,name='index',order=None):
         if name in self.spike_times.labels:
             return
@@ -932,6 +935,9 @@ class SpikeContainer:
                 warnings.warn("Key has multiple matches, but none is exact! Returning first match. (This might not be consistent)")
                 return found_keys[0]
         return key
+    def __setitem__(self, key, value):
+        if type(key) == str:
+            self.spike_times.add_label_dimension(key,value)
     def __getitem__(self, key):
         if type(key) is tuple:
             if type(key[1]) is not slice:
@@ -947,10 +953,6 @@ class SpikeContainer:
             key = self._find_keys(key)[0]
         st = self.spike_times
         return st[key]
-        if type(key) == slice:
-            print key.start, key.stop, key.step
-        else:
-            print key
     # Below are some functions that might be deprecated at some point
     def _deprecated__get_spike_array(self,resolution=1.0,units=None,min_t=None,max_t=None):
         units = self._default_units(units)
