@@ -248,16 +248,16 @@ class SpikeContainerCollection:
 
 class LabelDimension(object):
     def __init__(self,name=None,units='1',min=None,max=None,**kwargs):
-        if type(name) == LabelDimension:
-            self.name = name.name
-            self.units = name.units
-            self.min = name.min
-            self.max = name.max
-        else:
+        if type(name) == str:
             self.name = name
             self.units = units
             self.min = min
             self.max = max
+        else:
+            self.name = name.name
+            self.units = name.units
+            self.min = name.min
+            self.max = name.max
     def __str__(self):
         return "LabelDimension('"+self.name+"',"+str(self.units)+","+str(self.min)+","+str(self.max)+")"
     def __repr__(self):
@@ -270,7 +270,7 @@ class LabelDimension(object):
         if self.max is None:
             return 0
         return np.ceil((self.max - self.min) / resolution)
-    def linspace(self,bins=None,units=None,conversion_function=convert_time,resolution=None):
+    def linspace(self,bins=None,units=None,conversion_function=convert_time,resolution=None,end_at_end=True):
         """ bins overwrites resolution """
         min = conversion_function(self.min,from_units=self.units,to_units=units)
         max = conversion_function(self.max,from_units=self.units,to_units=units)
@@ -278,6 +278,8 @@ class LabelDimension(object):
             resolution = 1.0
         if bins is None:
             bins = self.len(resolution=resolution,units=units,conversion_function=conversion_function) + 1
+        if end_at_end:
+            return np.linspace(min,max,bins+1)[:-1]
         return np.linspace(min,max,bins)
     def linspace_bins(self,bins=None,units=None,conversion_function=convert_time,resolution=None):
         """Generates bin edges for a linspace tiling: there is one edge more than bins and each bin is in the middle between two edges"""
@@ -313,6 +315,8 @@ class LabeledMatrix(object):
     def __init__(self,matrix=None,labels=None,**kwargs):
         if matrix is not None:
             self.matrix = matrix.copy()
+            if len(self.matrix.shape) == 1:
+                self.matrix = self.matrix[:,np.newaxis]
         else:
             self.matrix = None
         self.labels = []
@@ -323,18 +327,20 @@ class LabeledMatrix(object):
                 elif type(l) == tuple or type(l) == list:
                     self.labels.append(LabelDimension(*l))
                 else:
-                    self.labels.append(LabelDimension(l.name,l.units,l.min,l.max))
+                    try:
+                        self.labels.append(LabelDimension(l.name,l.units,l.min,l.max))
+                    except:
+                        raise Exception('Input of `labels` was not understood. Use a list of `str`s, `list`s or `LabelDimension`s')
         self.expand_maxima()
     def __str__(self):
         return "LabeledMatrix with label dimensions: "+", ".join([str(l) for l in self.labels])
     def __repr__(self):
         return "LabeledMatrix with label dimensions: "+", ".join([repr(l) for l in self.labels])
     def expand_maxima(self):
-        if self.matrix is None or self.matrix.shape[0] == 0:
+        if self.matrix is None or self.matrix.shape[0] == 0 or len(self.matrix.shape) < 2:
             return
         i = 0
         while len(self.labels) < self.matrix.shape[1]:
-            print len(self.labels),'<', self.matrix.shape[1]
             self.labels.append('I'+str(i))
             i += 1
         for i in range(self.matrix.shape[1]):
@@ -343,13 +349,25 @@ class LabeledMatrix(object):
             if self.labels[i].max is None or self.labels[i].max < np.max(self.matrix[:,i]):
                 self.labels[i].max = np.max(self.matrix[:,i])
     def find_labels(self,key,find_in_name=True,find_in_units=False):
+        """
+            Takes a string or a function to find a set of label indizes 
+            that match.
+            If the string starts with a '~', the label only has to contain the string.
+        """
         if type(key) is str:
             found_keys = []
-            for label_no,label in enumerate(self.labels):
-                    if find_in_name and key in label.name:
+            if key.startswith('~'):
+                for label_no,label in enumerate(self.labels):
+                    if find_in_name and key[1:] in label.name:
                         found_keys.append(label_no)
+                    if find_in_units and key[1:] in label.units:
+                        found_keys.append(label_no)
+            else:
+                for label_no,label in enumerate(self.labels):
+                    if find_in_name and key == label.name:
+                        return [label_no]
                     if find_in_units and key == label.units:
-                        found_keys.append(label_no)
+                        return [label_no]
             return found_keys
         if hasattr(key, '__call__'):
             found_keys = []
@@ -449,9 +467,14 @@ class LabeledMatrix(object):
         if remove_dimensions:
             return LabeledMatrix(st[:,[r for r in remaining_label_dimensions]],[l for li,l in enumerate(new_labels) if li in remaining_label_dimensions])
         return LabeledMatrix(st,new_labels)
-    def add_label_dimension(self,name,label_data):
+    def add_label_dimension(self,name,label_data,label_label=None):
         if len(label_data.shape) == 1:
-            self.labels.append(LabelDimension(name))
+            if label_label is None:
+                label_label = LabelDimension(name)
+            else:
+                if type(name) is str:
+                    label_label = LabelDimension(name, units=label_label.units, min=label_label.min, max=label_label.max)
+            self.labels.append(label_label)
             self.matrix = np.concatenate([self.matrix,label_data[:,np.newaxis]],1)
         if len(label_data.shape) == 2:
             if type(name) is list or type(name) is tuple:
@@ -485,23 +508,31 @@ class LabeledMatrix(object):
                 If set to an integer, the dimension used for generation will be split into `bins` many, equal parts.
             reversed:       True
                 Whether argument list should be reversed, such that the first argument is rotated first.
+            fuzzy:
+                Whether to match the label perfectly or use fuzzy search. Can also be specified by
+                prepending the label name with a '~'
         """
         constraints = []
-        remove_dimensions = kwargs.get('remove_dimensions',False)
-        resolution = kwargs.get('resolution',None) 
+        remove_dimensions = kwargs.pop('remove_dimensions',False)
+        resolution = kwargs.pop('resolution',None) 
         bins = kwargs.get('bins',None) 
         if len(args) == 0:
             generator_indizes = range(1,len(self.labels))
         else:
-            generator_indizes = [kk for k in args for kk in self.find_labels(k)]
+            if kwargs.get("fuzzy",False):
+                generator_indizes = [kk for k in args for kk in self.find_labels('~'+k)]
+            else:
+                generator_indizes = [kk for k in args for kk in self.find_labels(k)]
         if kwargs.get("reversed",True):
             generator_indizes = list(reversed(generator_indizes))
-        generator_ranges = cartesian([self.labels[i].constraint_range_dict(resolution=resolution,bins=bins) for i in generator_indizes])
+        kwargs.pop('reversed',None)
+        kwargs.pop('fuzzy',None)
+        generator_ranges = cartesian([self.labels[i].constraint_range_dict(**kwargs) for i in generator_indizes])
         remaining_label_dimensions = [i for i,l in enumerate(self.labels) if i not in generator_indizes]
-        for t in generator_ranges:
+        for generator_t in generator_ranges:
             constraints = {}
             for ri, i in enumerate(generator_indizes):
-                constraints.update(t[ri])
+                constraints.update(generator_t[ri])
             yield self(remove_dimensions=remove_dimensions, **constraints)
 
 
@@ -606,25 +637,31 @@ class SpikeContainer:
         return units
     def convert(self,label_no=0,units=None,conversion_function=convert_time):
         return SpikeContainer(self.spike_times.convert(label_no,units=units,conversion_function=conversion_function),copy_from=self)
-    def label_by_time(self,time_signals,label_names=[],copy=True, **kwargs):
+    def label_by_time(self,time_signals,label_names=[],time_units='ms',time_dimension=0,copy=True,backup_original_spike_times_to=None,**kwargs):
         """
             creates a labeled spike data structure
 
-                time_label_array is list of lists (or matrix), containing a timestamp in the 
+                `time_signals` is list of lists (or matrix), containing a timestamp in the 
                 first column (or first element of each element) and indizes that are to be 
                 applied to the data in the remaining columns / elements.
 
             This function will not add or remove spikes, but only shift spikes according to the 
-            adjecent time signals.
+            preceding time signals.
 
             If you want to get spikes relative to a time signal with fixed limits, use `label_peri_signals`,
             which will leave out and duplicate spikes, but can manage overlapping time signals.
 
+            To get the absolute spike times back, `.absolute_spike_times_from_labels` can be used
+            on the resulting SpikeContainer.
+            However, the order and length of the timing signals might not be correct, if eg. 
+            the intervals between time signals vary in length.
 
+            If `backup_original_spike_times_to` is set to a string, the original spike times will
+            be saved as this dimension as the new (relative) spike times replace the old time dimension.
         """
         if self.data_format == 'empty':
             return SpikeContainer(None,units=self.units,copy_from=self)
-        spike_times = self.get_spike_times('ms').copy() # this is read only
+        spike_times = self.spike_times.get_converted(time_dimension, units=time_units)[1].copy() # this is read only
         re_zeroed_spike_times = spike_times.copy() # this will be modified
         indizes = np.zeros((len(spike_times),time_signals.shape[0] -1 ))
         for t in range(len(time_signals[0])):
@@ -644,16 +681,58 @@ class SpikeContainer:
                     )
         new_spike_times = LabeledMatrix(self.spike_times.matrix,self.spike_times.labels)
         new_spike_times.add_label_dimension(label_names,indizes)
-        new_spike_times.labels[0].units = units
+        new_spike_times.labels[0].units = time_units
         new_spike_times.matrix[:,0] = re_zeroed_spike_times
         new_spike_times.labels[0].min = np.min(re_zeroed_spike_times)
         new_spike_times.labels[0].max = np.max(re_zeroed_spike_times)
+        if backup_original_spike_times_to is not None:
+            new_spike_times.add_label_dimension(backup_original_spike_times_to,self[time_dimension])
         if copy:
             s = SpikeContainer(new_spike_times, copy_from=self)
+            #if backup_original_spike_times_to is not None:
+            #    # copying spikes
+            #    time_label = self.get_label(time_dimension)
+            #    s[backup_original_spike_times_to] = {'data':self[time_dimension],'label': time_label}
             return s
         else:
+            #if backup_original_spike_times_to is not None:
+            #    # copying spikes
+            #    time_label = self.get_label(time_dimension)
+            #    self[backup_original_spike_times_to] = {'data':self[time_dimension],'label': time_label}
             self.set_spike_times(new_spike_times)
             return self
+    def absolute_spike_times_from_labels(self,time_dimension=0,*args,**kwargs):
+        """
+            Creates a list of spike times where each value of the supplied dimensions
+            is added as a trial-time offset. This can be used as the inverse of 
+            `label_by_time` or `label_peri_signals` (while the later can lead to spike duplicates).
+
+            Eg. for three stimuli, in 5 trials each, for one second of recording
+            the spike time for the arguments absolute_spike_times_from_labels(
+            't','trial','stimulus') would be (in ms):
+                t + 1000.0 * trial + 5 * 1000.0 * stimulus
+
+            For absolute_spike_times_from_labels('t','stimulus','trial') it would be:
+                t + 1000.0 * stimulus + 3 * 1000.0 * trial
+
+            A custom multiplier can be supplied when the dimension is given as a keyword argument:
+            absolute_spike_times_from_labels('t',stimulus=10,trial=None)
+                t + 1000.0 * stimulus + 10 * 1000.0 * trial
+
+            If the keyword has the value `None`, the length of the dimension is used.
+        """
+        x = self[time_dimension]
+        factor = self.len(time_dimension)
+        for a in args:
+            x += factor * self[a]
+            factor *= self.len(a)
+        for k in kwargs.keys():
+            x += factor * self[a]
+            if kwargs[k] is not None:
+                factor *= kwargs[k]
+            else:
+                factor *= self.len(k)
+        return x
     def label_peri_signals(self,time_signals,label_names=[],units=None,data_units=None,copy=True, pre_signal = 100.0, post_signal = 1000.0, **kwargs):
         """
             creates a labeled spike data structure
@@ -746,16 +825,32 @@ class SpikeContainer:
             if len(spike_times.shape) == 0:
                 spike_times = np.array([spike_times])
             self.set_spike_times(spike_times, units=units,min_t=min_t,max_t=max_t,data_units=data_units)
-    def spatial_firing_rate(self,label_x='x',label_y='y',bins=10,geometry=None,weight_function=None,normalize_time=True,normalize_n=False,start_units_with_0=True):
+    def spatial_firing_rate(self,label_x='x',label_y='y',bins=None,resolution=1.0,geometry=None,weight_function=None,normalize_time=True,normalize_n=False,start_units_with_0=True):
         """
+                `bins` can be either a number of bins (has to be int) or a list of edges.
+                `bins` can be a tuple (for x and y respectively).
 
                 imshow(s.spatial_firing_rate(weight_function=lambda x: (x[:,1]>0.5)*(x[:,1]<0.6)))
 
         """
         if bool(self):
+            if type(bins) is tuple:
+                if type(bins[0]) is int:
+                    bins_x = self.spike_times.get_label(label_y).linspace_bins(bins=bins[0])
+                else:
+                    bins_x = bins[0]
+                if type(bins[1]) is int:
+                    bins_y = self.spike_times.get_label(label_x).linspace_bins(bins=bins[1])
+                else:
+                    bins_y = bins[1]
+            else:
+                if type(bins) is int:
+                    bins_x = self.spike_times.get_label(label_y).linspace_bins(bins=bins)
+                    bins_y = self.spike_times.get_label(label_x).linspace_bins(bins=bins)
+                else:
+                    bins_x = bins
+                    bins_y = bins
             if weight_function is None:
-                bins_x = self.spike_times.get_label(label_y).linspace_bins(bins=bins)
-                bins_y = self.spike_times.get_label(label_x).linspace_bins(bins=bins)
                 H,xed,yed = np.histogram2d(self.spike_times[label_x],self.spike_times[label_y],bins=(bins_x,bins_y))
             else:
                 if start_units_with_0:
@@ -764,8 +859,6 @@ class SpikeContainer:
                     weights = weight_function(spike_numbers)
                 else:
                     weights = weight_function(self.spike_times[label_x],self.spike_times[label_y])
-                bins_x = self.spike_times.get_label(label_y).linspace_bins(bins=bins)
-                bins_y = self.spike_times.get_label(label_x).linspace_bins(bins=bins)
                 H,xed,yed = np.histogram2d(self.spike_times[label_x],self.spike_times[label_y],bins=(bins_x,bins_y),weights=weights)
             if normalize_time:
                 H = H/(self.spike_times.labels[0].convert('s').len())
@@ -773,20 +866,32 @@ class SpikeContainer:
                 H = H/cells_per_bin
             return H,xed,yed
         else:
-            return ([[0]],[0],[0])
-    def plot_spatial_firing_rate(self,label_x='x',label_y='y',bins=10,geometry=None,weight_function=None,normalize_time=True,normalize_n=False,start_units_with_0=True,**kwargs):
+            return (np.array([[0]]),np.array([0]),np.array([0]))
+    def plot_spatial_firing_rate(self,label_x='x',label_y='y',bins=None,resolution=1.0,geometry=None,weight_function=None,normalize_time=True,normalize_n=False,start_units_with_0=True,**kwargs):
         """
+            Plots a two dimensional representation of the firing rates.
+            Each spike is binned according to two labels (`label_x`='x' and `label_y`='y'),
+            which give a 2d histogram with `bins` many bins in each direction.
+            By default, the number of bins orients itself on the dimensions of the 
+            respective labels, sampling them from the minimum to the maximum with 
+            `resolution`, which defaults to 1. 
 
+            `bins` and `resolution` can be tuples corresponding to the x and y values.
 
         """
         if bool(self):
             import matplotlib.pylab as plt
+            if bins is None:
+                if type(resolution) is tuple:
+                    bins = (self.linspace_bins(label_x,resolution=resolution[0]),self.linspace_bins(label_y,resolution=resolution[1]))
+                else:
+                    bins = (self.linspace_bins(label_x,resolution=resolution),self.linspace_bins(label_y,resolution=resolution))
             H,xed,yed = self.spatial_firing_rate(label_x=label_x,label_y=label_y,bins=bins,geometry=geometry,weight_function=weight_function,normalize_time=normalize_time,normalize_n=False,start_units_with_0=start_units_with_0)
             X, Y = np.meshgrid(xed, yed)
             kwargs['cmap'] = kwargs.get('cmap','gray')
             plt.pcolormesh(X, Y, H,**kwargs)
             plt.gca().set_aspect('equal')
-    def temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N'):
+    def temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=False,normalize_n=False,start_units_with_0=True,cell_dimension='N'):
         """
             Outputs a time histogram of spikes.
 
@@ -816,15 +921,29 @@ class SpikeContainer:
             if normalize_n:
                 H = H/(len(np.unique(self.spike_times[cell_dimension])))
             return H,edg
-    def plot_temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N',**kwargs):
+    def plot_temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=False,normalize_n=False,start_units_with_0=True,cell_dimension='N',**kwargs):
         """
+            Plots a firing rate plot.
 
-
+            Accepts the same keyword arguments as :func:`matplotlib.pylab.plot()` for lines (:class:`~matplotlib.lines.Line2D`), eg `color`, `linewidth` (or `lw`), `linestyle` (or `ls`).
+            See help for :func:`matplotlib.pylab.plot()`.
         """
         if bool(self):
             import matplotlib.pylab as plt
             H,ed = self.temporal_firing_rate(time_dimension=time_dimension,resolution=resolution,units=units,min_t=min_t,max_t=max_t,weight_function=weight_function,normalize_time=normalize_time,normalize_n=normalize_n,start_units_with_0=start_units_with_0,cell_dimension=cell_dimension)
             plt.plot(ed[1:],H,**kwargs)
+    def plot_raster(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N',**kwargs):
+        """
+            Plots a raster plot.
+
+            Accepts the same keyword arguments as matplotlib.pylab.plot() for points, eg. `marker`,
+            `markerfacecolor`, `markersize` (or `ms`), `markeredgecolor`.
+            See help for :func:`matplotlib.pylab.plot()`.
+        """
+        if bool(self):
+            import matplotlib.pylab as plt
+            plt.plot(self[time_dimension],self[cell_dimension],'.',**kwargs)
+            plt.xlim(min_t, max_t)
     def smoothed_temporal_firing_rate(self, gaussian_width=10.0, **kwargs):
         if self.data_format == 'spike_times':
             from scipy.ndimage import gaussian_filter1d
@@ -844,20 +963,9 @@ class SpikeContainer:
             plt.plot(ed[1:],firing_rates,**kwargs)
     def __call__(self,**kwargs):
         return SpikeContainer(self.spike_times(**kwargs), copy_from=self)
-    def add_label(self,name,label_data):
-        if self.data_format == 'spike_times':
-            if name in self.spike_times.labels:
-                raise Exception('Already labeled with "'+str(name)+': '+str(self.spike_times.labels)+'"!')
-                return
-            if len(label_data.shape) == 1:
-                self.spike_times.labels.append(str(name))
-                self.index_dimensions = np.concatenate([self.index_dimensions,np.max(label_data[:,np.newaxis],0)+1],1)                
-                self.spike_times = np.concatenate([self.spike_times,label_data[:,np.newaxis]],1)
-            if len(label_data.shape) == 2:
-                if type(name) is list or type(name) is tuple:
-                    self.spike_times.labels.extend(name)
-                    self.index_dimensions = np.concatenate([self.index_dimensions,np.max(label_data,0)+1],1)                
-                    self.spike_times = np.concatenate([self.spike_times,label_data],1)                
+    def add_label(self,name,label_data,label_label=None):
+        self.spike_times.add_label_dimension(name,label_data,label_label=label_label)
+        return               
     def add_index(self,name='index',order=None):
         if name in self.spike_times.labels:
             return
@@ -865,7 +973,7 @@ class SpikeContainer:
             order = [o for o in order]
             new_index = icartesian_to_index(self.spike_times[:,order])
         else:
-            new_index = cartesian_to_index(self.spike_times[:,len(self.time_dimensions):])
+            new_index = cartesian_to_index(self.spike_times[:,:])
         self.add_label(name, new_index)
     def generate(self,*args,**kwargs):
         """
@@ -899,13 +1007,41 @@ class SpikeContainer:
         for st in self.spike_times.generate(*args,**kwargs):
             yield SpikeContainer(st, copy_from=self)
     def len(self,*args,**kwargs):
-        constraints = []
+        """
+            Returns the number of spikes or the length of a Dimension in the respective unit::
+
+                spikes.len()    # returns the number of entries ie. the number of spikes
+                spikes.len('t') # returns eg. ms
+                spikes.len('N') # returns the number of neurons ()
+
+            If multiple arguments are supplied, a list is returned with the respective lengths.
+
+            # Note: a previous version of this function created the total length of the combination 
+               of the supplied arguments (given they are discrete). This behaviour can be recreated 
+               by calling np.prod() in the result.
+        """
         if len(args) == 0 or args == None:
-            generator_indizes = range(1,len(self.spike_times.labels))
-        else:
-            generator_indizes = [kk for k in args for kk in self._find_keys(k)]
-        generator_ranges = cartesian([np.arange(self.index_dimensions[i-len(self.time_dimensions)]) for i in generator_indizes])
-        return len(generator_ranges)
+            return self.spike_times.matrix.shape[0]
+        if len(args) == 1:
+            return self.spike_times.get_label(args[0]).len()
+        return [self.spike_times.get_label(a).len() for a in args]
+    def linspace(self,dim,*args,**kwargs):
+        """
+            Creates a range of values for a specific dimension that go from its minimum to its 
+            maximum either in certain steps (resolution != None) or a fixed number of bins 
+            (bins != None). The output can be converted into a different unit (eg. into 'seconds').
+
+            bins=None
+            units=None
+            conversion_function=convert_time
+            resolution=None
+        """
+        return self.spike_times.get_label(dim).linspace(*args,**kwargs)
+    def linspace_bins(self,dim,*args,**kwargs):
+        """
+            Like linspace, but shifts the space to create edges for histograms.
+        """
+        return self.spike_times.get_label(dim).linspace_bins(*args,**kwargs)
     def _find_keys(self,key):
         if type(key) is str:
             found_keys = []
@@ -932,6 +1068,21 @@ class SpikeContainer:
                 warnings.warn("Key has multiple matches, but none is exact! Returning first match. (This might not be consistent)")
                 return found_keys[0]
         return key
+    def __setitem__(self, key, value):
+        """
+            Add a new named label dimension with the corresponding data.
+            If a dictionary is added, the entry 'data' will be used as data
+            and the entry 'label' will be used to copy units,min and max
+            from an existing LabelDimension (the name will be dictated by the
+            key used to set the new data).
+            This might look a bit like magic, but I prefer it to just giving a
+            tuple or adding the LabelDimension information to the key.
+        """
+        if type(key) == str:
+            if type(value) == dict:
+                self.spike_times.add_label_dimension(key,value['data'],label_label=value['label'])
+            else:
+                self.spike_times.add_label_dimension(key,value)
     def __getitem__(self, key):
         if type(key) is tuple:
             if type(key[1]) is not slice:
@@ -947,10 +1098,6 @@ class SpikeContainer:
             key = self._find_keys(key)[0]
         st = self.spike_times
         return st[key]
-        if type(key) == slice:
-            print key.start, key.stop, key.step
-        else:
-            print key
     # Below are some functions that might be deprecated at some point
     def _deprecated__get_spike_array(self,resolution=1.0,units=None,min_t=None,max_t=None):
         units = self._default_units(units)
