@@ -369,7 +369,7 @@ def recgen_enumerate(gen,n=tuple()):
 #############################################
 ## plot things
 
-def color_space(colormap, a, start=0.1, stop=0.9):
+def color_space(colormap, a, start=0.1, stop=0.9, len=None):
     if type(colormap) is str:
         from matplotlib import cm
         if colormap in cm.__dict__:
@@ -378,12 +378,12 @@ def color_space(colormap, a, start=0.1, stop=0.9):
             colormap = cm.gnuplot
     if type(a) is int or type(a) is float:
         return colormap(np.linspace(start,stop,int(a)))
-    return colormap(np.linspace(start,stop,len(a)))
+    return colormap(np.linspace(start,stop,len if len is not None else len(a)))
 
-def colorate(sequence, colormap="", start=0):
+def colorate(sequence, colormap="", start=0, len=None):
     """ like enumerate, but with colors """
     n = start
-    colors = color_space(colormap, sequence, start=0.1, stop=0.9)
+    colors = color_space(colormap, sequence, start=0.1, stop=0.9, len=len)
     for elem in sequence:
         yield n, colors[n-start], elem
         n += 1
