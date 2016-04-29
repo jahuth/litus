@@ -486,11 +486,16 @@ class LabeledMatrix(object):
             for k in kwargs:
                 if k == label.name:
                     constraints.append(self.matrix[:,label_no] == kwargs[k])
+                    new_label.max = kwargs[k]
+                    new_label.min = kwargs[k]
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__lt':
                     constraints.append(self.matrix[:,label_no] < kwargs[k])
-                    new_label.max = np.min([new_label.max,kwargs[k]])
+                    if new_label.units == '1':
+                        new_label.max = np.min([new_label.max,kwargs[k]-1]) # is this right?
+                    else:
+                        new_label.max = np.min([new_label.max,kwargs[k]])
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__lte':
@@ -500,7 +505,10 @@ class LabeledMatrix(object):
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__gt':
                     constraints.append(self.matrix[:,label_no] > kwargs[k])
-                    new_label.min = np.max([new_label.min,kwargs[k]])
+                    if new_label.units == '1':
+                        new_label.min = np.max([new_label.min,kwargs[k]+1])
+                    else:
+                        new_label.min = np.max([new_label.min,kwargs[k]])
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__gte':
@@ -519,6 +527,8 @@ class LabeledMatrix(object):
             return LabeledMatrix(st[:,[r for r in remaining_label_dimensions]],[l for li,l in enumerate(new_labels) if li in remaining_label_dimensions])
         return LabeledMatrix(st,new_labels)
     def add_label_dimension(self,name,label_data,label_label=None):
+        if type(label_data) in [float,bool,int]:
+            label_data = np.array(label_data)
         if len(label_data.shape) == 1:
             if label_label is None:
                 label_label = LabelDimension(name)
@@ -735,8 +745,10 @@ class SpikeContainer:
         if self.data_format == 'empty':
             return SpikeContainer(None,units=self.units,copy_from=self)
         spike_times = self.spike_times.get_converted(time_dimension, units=time_units)[1].copy() # this is read only
+        time_signals = np.array(time_signals)
         re_zeroed_spike_times = spike_times.copy() # this will be modified
         indizes = np.zeros((len(spike_times),time_signals.shape[0] -1 ))
+        maximal_time_gap = np.max(np.diff(time_signals[0]))
         for t in range(len(time_signals[0])):
             if t + 1 < len(time_signals[0]):
                 # we are past the last time signal
@@ -756,8 +768,11 @@ class SpikeContainer:
         new_spike_times.add_label_dimension(label_names,indizes)
         new_spike_times.labels[0].units = time_units
         new_spike_times.matrix[:,0] = re_zeroed_spike_times
-        new_spike_times.labels[0].min = np.min(re_zeroed_spike_times)
-        new_spike_times.labels[0].max = np.max(re_zeroed_spike_times)
+        new_spike_times.labels[0].min = 0
+        new_spike_times.labels[0].max = maximal_time_gap
+        if kwargs.get('recalculate_time_extent',False):
+            new_spike_times.labels[0].min = np.min(re_zeroed_spike_times)
+            new_spike_times.labels[0].max = np.max(re_zeroed_spike_times)
         if backup_original_spike_times_to is not None:
             new_spike_times.add_label_dimension(backup_original_spike_times_to,self[time_dimension])
         if copy:
@@ -774,6 +789,26 @@ class SpikeContainer:
             #    self[backup_original_spike_times_to] = {'data':self[time_dimension],'label': time_label}
             self.set_spike_times(new_spike_times)
             return self
+    def _absolute_spike_times_from_labels(self,time_dimension=0,*args,**kwargs):
+        """
+            internal function that gives absolute_spike_times_from_labels, as well as 
+            the factor (maximum range)
+        """
+        x = self[time_dimension].copy()
+        #x = self.spike_times.get_converted(time_dimension,kwargs.get('units',None))
+        factor = self.len(time_dimension,units=kwargs.get('units',None),resolution=kwargs.get('resolution',1.0))
+        for a in args:
+            if a in self:
+                x += factor * self[a]
+                factor *= self.len(a)
+        for k in kwargs.keys():
+            if k in self:
+                x += factor * self[k]
+                if kwargs[k] is not None:
+                    factor *= kwargs[k]
+                else:
+                    factor *= self.len(k)
+        return x,factor
     def absolute_spike_times_from_labels(self,time_dimension=0,*args,**kwargs):
         """
             Creates a list of spike times where each value of the supplied dimensions
@@ -794,40 +829,19 @@ class SpikeContainer:
 
             If the keyword has the value `None`, the length of the dimension is used.
         """
-        x = self[time_dimension].copy()
-        factor = self.len(time_dimension)
-        for a in args:
-            x += factor * self[a]
-            factor *= self.len(a)
-        for k in kwargs.keys():
-            x += factor * self[k]
-            if kwargs[k] is not None:
-                factor *= kwargs[k]
-            else:
-                factor *= self.len(k)
-        return x
+        return self._absolute_spike_times_from_labels(time_dimension,*args,**kwargs)[0]
     def add_absolute_spike_times_from_labels(self,new_time_dimension,time_dimension=0,*args,**kwargs):
         """
 
         """
-        x = self[time_dimension].copy()
-        factor = self.len(time_dimension)
-        for a in args:
-            x += factor * self[a]
-            factor *= self.len(a)
-        for k in kwargs.keys():
-            x += factor * self[k]
-            if kwargs[k] is not None:
-                factor *= kwargs[k]
-            else:
-                factor *= self.len(k)
+        x, factor = self._absolute_spike_times_from_labels(time_dimension,*args,**kwargs)
         self[new_time_dimension] = {
                         'data':  x,
-                        'label': LabelDimension(new_time_dimension,self.get_units(time_dimension),0,factor)
+                        'label': LabelDimension(new_time_dimension,units=self.get_units(time_dimension),min=0,max=factor)
                         }
     def copy_with_absolute_spike_times_from_labels(self,time_dimension=0,*args,**kwargs):
         new_spike_times = LabeledMatrix(self.spike_times.matrix,self.spike_times.labels) # copies the data
-        new_spike_times[time_dimension] = self.absolute_spike_times_from_labels(time_dimension,*args,**kwargs)
+        new_spike_times[time_dimension] = self._absolute_spike_times_from_labels(time_dimension,*args,**kwargs)[0]
         return SpikeContainer(new_spike_times, copy_from=self)
     def label_peri_signals(self,time_signals,label_names=[],units=None,data_units=None,copy=True, pre_signal = 100.0, post_signal = 1000.0, **kwargs):
         """
