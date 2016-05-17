@@ -678,7 +678,17 @@ class Lists:
     def transpose(self,n=-1):
         return self.array(n).transpose()
     def mean(self,dims=None,n=-1):
-        return np.mean(self.array(n),dims)
+        return np.mean(self.array(n),self._check_dims(dims))
+    def sum(self,dims=None,n=-1):
+        return np.sum(self.array(n),self._check_dims(dims))
+    def nanmean(self,dims=None,n=-1):
+        return np.nanmean(self.array(n),self._check_dims(dims))
+    def nansum(self,dims=None,n=-1):
+        return np.nansum(self.array(n),self._check_dims(dims))
+    def _check_dims(self,dims):
+        if type(dims) in [list,tuple]:
+            return [self[d] if type(d) is str else d for d in dims]
+        return dims
     def __getitem__(self,key):
         for i,n in enumerate(self.dimension_names):
             if n == key:
