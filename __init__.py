@@ -105,6 +105,117 @@ def animate(a,r=25,every_nth_frame=5,cmap='gray',tmp_dir='tmp',frame_prefix='fra
                     <source src="data:video/mp4;base64,{0}" type="video/mp4" />
                  </video>'''.format(encoded.decode('ascii')))
 
+class Figure:
+    """
+    Figure Context Manager
+
+    Can be used with the **with** statement::
+
+        import litus
+        x = np.arange(0,10,0.1)
+        with litus.figure("some_test.png"):
+            plot(cos(x))    # plots to a first plot
+            with litus.figure("some_other_test.png"):
+                plot(-1*np.array(x)) # plots to a second plot
+            plot(sin(x))    # plots to the first plot again
+
+    Or if they are to be used in an interactive console::
+
+        import litus
+        x = np.arange(0,10,0.1)
+        with litus.figure("some_test.png",close=False):
+            plot(cos(x))    # plots to a first plot
+                with ni.figure("some_other_test.png",close=False):
+                    litus(-1*np.array(x)) # plots to a second plot
+            plot(sin(x))    # plots to the first plot again
+
+    Both figures will be displayed, but the second one will remain available after the code is executed. (But keep in mind that in the iPython pylab console, after every input, all figures will be closed)
+
+    """
+    def __init__(self,path,display=False,close=True):
+        self.path = path
+        self.display = display
+        self._close = close
+        self.fig_stack = []
+        self.axis_stack = []
+        self.fig = None
+        self.axis = None
+    def __enter__(self):
+        import matplotlib.pyplot as plt
+        self.fig_stack.append(plt.gcf())
+        self.axis_stack.append(plt.gca())
+        if self.fig is None:
+            self.fig = plt.figure()
+            self.axis = self.fig.gca()
+        else:
+            plt.figure(self.fig.number)
+        return self.fig
+    def __exit__(self, type, value, tb):
+        import matplotlib.pyplot as plt
+        if self.path is not None and self.path != "":
+            self.fig.savefig(self.path)
+        if self.display:
+            try:
+                # trying to use ipython display
+                IPython.core.display.display(self.fig)
+            except:
+                # otherwise presume that we run with some other gui backend. If we don't, nothing will happen.
+                self.fig.show(warn=False)
+        if self._close:
+            plt.close(self.fig)
+            self.fig = None
+            self.fig_stack.pop()
+            self.axis_stack.pop()
+        else:
+            fig = self.fig_stack.pop()
+            ax = self.axis_stack.pop()
+            plt.figure(fig.number)
+            plt.sca(ax)
+    def show(self,close=True):
+        if self.path is not None and self.path != "":
+            self.fig.savefig(self.path)
+        try:
+            # trying to use ipython display
+            IPython.core.display.display(self.fig)
+        except:
+            # otherwise presume that we run with some other gui backend. If we don't, nothing will happen.
+            self.fig.show(warn=False)
+        if close == True:
+            self.close()
+    def close(self):
+        import matplotlib.pyplot as plt
+        plt.close(self.fig)
+
+def figure(path,display=False,close=True):
+    """
+    Can be used with the **with** statement::
+
+        import litus
+        x = np.arange(0,10,0.1)
+        with litus.figure("some_test.png"):
+            plot(cos(x))    # plots to a first plot
+            with litus.figure("some_other_test.png"):
+                plot(-1*np.array(x)) # plots to a second plot
+            plot(sin(x))    # plots to the first plot again
+
+
+    Or if they are to be used in an interactive console::
+
+
+        import litus
+        x = np.arange(0,10,0.1)
+        with litus.figure("some_test.png",display=True):
+            plot(cos(x))    # plots to a first plot
+            with litus.figure("some_other_test.png",close=False):
+                plot(-1*np.array(x)) # plots to a second plot
+            plot(sin(x))    # plots to the first plot again
+
+    Both of these figures will be displayed, but the second one will remain open and can be activated again.
+
+
+    """
+    return Figure(path,display=display,close=close)
+
 
 #############################################
 ## Alert someone
