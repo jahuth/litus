@@ -112,22 +112,29 @@ class Figure:
     Can be used with the **with** statement::
 
         import litus
+        import numpy as np
+        import matplotlib.pylab as plt
         x = np.arange(0,10,0.1)
-        with litus.figure("some_test.png"):
-            plot(cos(x))    # plots to a first plot
+        with litus.figure("some_test.png") as f:
+            plt.plot(x,np.cos(x))    # plots to a first plot
             with litus.figure("some_other_test.png"):
-                plot(-1*np.array(x)) # plots to a second plot
-            plot(sin(x))    # plots to the first plot again
+                plt.plot(-1*np.array(x)) # plots to a second plot
+            plt.plot(x,np.sin(x))    # plots to the first plot again
+            f.set_tight_layout(True) # using the figure object
+
 
     Or if they are to be used in an interactive console::
 
+
         import litus
+        import numpy as np
+        import matplotlib.pylab as plt
         x = np.arange(0,10,0.1)
-        with litus.figure("some_test.png",close=False):
-            plot(cos(x))    # plots to a first plot
-                with ni.figure("some_other_test.png",close=False):
-                    litus(-1*np.array(x)) # plots to a second plot
-            plot(sin(x))    # plots to the first plot again
+        with litus.figure("some_test.png",display=True):
+            plt.plot(x,np.cos(x))    # plots to a first plot
+            with litus.figure("some_other_test.png",close=False):
+                plt.plot(-1*np.array(x)) # plots to a second plot
+            plt.plot(x,np.sin(x))    # plots to the first plot again
 
     Both figures will be displayed, but the second one will remain available after the code is executed. (But keep in mind that in the iPython pylab console, after every input, all figures will be closed)
 
@@ -191,24 +198,29 @@ def figure(path,display=False,close=True):
     Can be used with the **with** statement::
 
         import litus
+        import numpy as np
+        import matplotlib.pylab as plt
         x = np.arange(0,10,0.1)
-        with litus.figure("some_test.png"):
-            plot(cos(x))    # plots to a first plot
+        with litus.figure("some_test.png") as f:
+            plt.plot(x,np.cos(x))    # plots to a first plot
             with litus.figure("some_other_test.png"):
-                plot(-1*np.array(x)) # plots to a second plot
-            plot(sin(x))    # plots to the first plot again
+                plt.plot(-1*np.array(x)) # plots to a second plot
+            plt.plot(x,np.sin(x))    # plots to the first plot again
+            f.set_tight_layout(True) # using the figure object
 
 
     Or if they are to be used in an interactive console::
 
 
         import litus
+        import numpy as np
+        import matplotlib.pylab as plt
         x = np.arange(0,10,0.1)
         with litus.figure("some_test.png",display=True):
-            plot(cos(x))    # plots to a first plot
+            plt.plot(x,np.cos(x))    # plots to a first plot
             with litus.figure("some_other_test.png",close=False):
-                plot(-1*np.array(x)) # plots to a second plot
-            plot(sin(x))    # plots to the first plot again
+                plt.plot(-1*np.array(x)) # plots to a second plot
+            plt.plot(x,np.sin(x))    # plots to the first plot again
 
     Both of these figures will be displayed, but the second one will remain open and can be activated again.
 
@@ -220,7 +232,7 @@ def figure(path,display=False,close=True):
 #############################################
 ## Alert someone
 
-def alert(msg,body="",icon="/home/jacob/Projects/Silversight/icons/kernel.svg"):
+def alert(msg,body="",icon=None):
     """
         alerts the user of something happening via `notify-send`. If it is not installed, the alert will be printed to the console.
     """
