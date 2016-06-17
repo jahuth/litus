@@ -478,9 +478,52 @@ def recgen_enumerate(gen,n=tuple()):
                 yield element
 
 #############################################
+## list of dictionaries / dictioanries of lists
+
+def list_of_dicts_to_dict_of_lists(list_of_dictionaries):
+    """
+        Takes a list of dictionaries and creates a dictionary with the combined values for 
+        each key in each dicitonary.
+        Missing values are set to `None` for each dicitonary that does not contain a key 
+        that is present in at least one other dicitonary.
+
+            >>> litus.list_of_dicts_to_dict_of_lists([{'a':1,'b':2,'c':3},{'a':3,'b':4,'c':5},{'a':1,'b':2,'c':3}])
+
+            {'a': [1, 3, 1], 'b': [2, 4, 2], 'c': [3, 5, 3]}
+
+        Shorthand: `litus.ld2dl(..)`
+    """
+    result = {}
+    all_keys = set([k for d in  list_of_dictionaries for k in d.keys()])
+    for d in list_of_dictionaries:
+        for k in all_keys:
+            result.setdefault(k,[]).append(d.get(k,None))
+    return result
+
+ld2dl = list_of_dicts_to_dict_of_lists
+
+def dict_of_lists_to_list_of_dicts(dictionary_of_lists):
+    """
+        Takes a dictionary of lists and creates a list of dictionaries.
+        If the lists are of unequal length, the remaining entries are set to `None`.
+
+        Shorthand: `litus.dl2ld(..)`:
+
+            >>> litus.dl2ld({'a': [1, 3, 1], 'b': [2, 4, 2], 'c': [3, 5, 3]})
+
+            [{'a': 1, 'b': 2, 'c': 3}, {'a': 3, 'b': 4, 'c': 5}, {'a': 1, 'b': 2, 'c': 3}]
+
+    """
+    return [{key: dictionary_of_lists[key][index] if len(dictionary_of_lists[key]) > index else None for key in dictionary_of_lists.keys()}
+         for index in range(max(map(len,dictionary_of_lists.values())))]
+
+dl2ld = dict_of_lists_to_list_of_dicts
+
+
+#############################################
 ## plot things
 
-def color_space(colormap, a, start=0.1, stop=0.9, len=None):
+def color_space(colormap, a, start=0.1, stop=0.9, length=None):
     if type(colormap) is str:
         from matplotlib import cm
         if colormap in cm.__dict__:
@@ -489,12 +532,12 @@ def color_space(colormap, a, start=0.1, stop=0.9, len=None):
             colormap = cm.gnuplot
     if type(a) is int or type(a) is float:
         return colormap(np.linspace(start,stop,int(a)))
-    return colormap(np.linspace(start,stop,len if len is not None else len(a)))
+    return colormap(np.linspace(start,stop,length if length is not None else len(a)))
 
-def colorate(sequence, colormap="", start=0, len=None):
+def colorate(sequence, colormap="", start=0, length=None):
     """ like enumerate, but with colors """
     n = start
-    colors = color_space(colormap, sequence, start=0.1, stop=0.9, len=len)
+    colors = color_space(colormap, sequence, start=0.1, stop=0.9, length=length)
     for elem in sequence:
         yield n, colors[n-start], elem
         n += 1
