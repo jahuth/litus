@@ -894,6 +894,24 @@ class SpikeContainer:
         self.spike_containers = None
         self.min_t = None
         self.max_t = None
+    def ISIs(self,time_dimension=0,units=None,min_t=None,max_t=None):
+        """
+            returns the Inter Spike Intervals
+
+                `time_dimension`: which dimension contains the spike times (by default the first)
+
+                `units`,`min_t`,`max_t`: define the units of the output and the range of spikes that should be considered
+        """
+        units = self._default_units(units)
+        converted_dimension,st = self.spike_times.get_converted(time_dimension,units)
+        if min_t is None:
+            min_t = converted_dimension.min
+        if max_t is None:
+            max_t = converted_dimension.max
+        return diff(sorted(st[(st>min_t) * (st <max_t)]))
+    def ISI_fano_factor(self,time_dimension=0,units=None,min_t=None,max_t=None):
+        isis = self.isis(time_dimension=time_dimension,units=units,min_t=min_t,max_t=max_t)
+        return np.std(isis)/np.mean(isis)
     def set_spike_times(self,data,units=None,min_t=0.0,max_t=None,data_units=None,labels=None,correct_missing_time_dimensions=False):
         units = self._default_units(units)
         if type(data) is LabeledMatrix:
