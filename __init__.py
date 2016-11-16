@@ -3,6 +3,7 @@ from subprocess import call
 import json
 from copy import copy
 import re
+import lindex
 
 _session_description = ""
 _last_inputs = []
@@ -62,7 +63,7 @@ def unsnip(tag=None,start=-1):
         if len(_last_inputs) > 0:
             i.set_next_input(_last_inputs[start])
 
-def animate(a,r=25,every_nth_frame=5,cmap='gray',tmp_dir='tmp',frame_prefix='frame_',animation_name='animation.mp4',func=None):
+def animate(a,r=25,every_nth_frame=1,cmap='gray',tmp_dir='tmp',frame_prefix='frame_',animation_name='animation.mp4',func=None):
     import os,io,glob
     import base64
     import matplotlib.pylab as plt
@@ -554,6 +555,13 @@ def colorate(sequence, colormap="", start=0, length=None):
         yield n, colors[n-start], elem
         n += 1
 
+def plot_corridor(x,y,axis=1,alpha=0.2,**kwargs):
+    x = np.array(x,dtype=float)
+    from matplotlib.pylab import fill_between, plot
+    fill_between(x, y.mean(axis)-y.std(axis), y.mean(axis)+y.std(axis),alpha=alpha,**kwargs)
+    plot(x, y.mean(axis)+y.std(axis),'-',alpha=alpha,**kwargs)
+    plot(x, y.mean(axis)-y.std(axis),'-',alpha=alpha,**kwargs)
+    plot(x,y.mean(axis),**kwargs)
 
 #################################################
 ## Parameter / Data Collectors
@@ -784,7 +792,14 @@ class Lists:
         print lc['Second'] # index of named dimension
         print lc.mean((1,2))
 
+    Or decorating the `range` generators::
 
+        lc = litus.Lists()
+        for k in lc.generator(range(2),'First'):
+            for j in lc.generator(range(2),'Second'):
+                for i in lc.generator(range(2),'Third'):
+                    l.append(i+j*10+k*100)
+        
     Gives::
 
         [[[  0   1]
@@ -816,7 +831,7 @@ class Lists:
                         l.append(i+j*10+k*100)
                 lc-= 1
             lc-=3
-        lc-=2 # de-indet twice to close the context and add an extra dimension
+        lc-=2 # de-indent twice to close the context and add an extra dimension
         print lc.array().shape
 
     Output::
@@ -844,16 +859,24 @@ class Lists:
     def transpose(self,n=-1):
         return self.array(n).transpose()
     def mean(self,dims=None,n=-1):
-        return np.mean(self.array(n),self._check_dims(dims))
+        dims = self._check_dims(dims)
+        return np.mean(self.array(n),dims)
     def sum(self,dims=None,n=-1):
-        return np.sum(self.array(n),self._check_dims(dims))
+        dims = self._check_dims(dims)
+        return np.sum(self.array(n),dims)
     def nanmean(self,dims=None,n=-1):
-        return np.nanmean(self.array(n),self._check_dims(dims))
+        dims = self._check_dims(dims)
+        return np.nanmean(self.array(n),dims)
     def nansum(self,dims=None,n=-1):
-        return np.nansum(self.array(n),self._check_dims(dims))
+        dims = self._check_dims(dims)
+        return np.nansum(self.array(n),dims)
+    def append(self,elem):
+        self.list.append(elem)
+    def insert(self,index,elem):
+        self.list.insert(elem)
     def _check_dims(self,dims):
         if type(dims) in [list,tuple]:
-            return [self[d] if type(d) is str else d for d in dims]
+            return tuple([self[d] if type(d) is str else d for d in dims])
         return dims
     def __getitem__(self,key):
         for i,n in enumerate(self.dimension_names):
@@ -868,6 +891,20 @@ class Lists:
             self.dimension_names[len(self.stack)] = dimension_name
             self.dimension_values[len(self.stack)] = dimension_values
         return self
+    def generator(self,gen,*args,**kwargs):
+        """
+            Use this function to enter and exit the context at the beginning and end of a generator.
+
+            Example::
+
+                li = litus.Lists()
+                for i in li.generator(range(100)):
+                    li.append(i)
+
+        """
+        with self(*args,**kwargs):
+            for i in gen:
+                yield i
     def __iadd__(self,n):
         if n < 0:
             return self.__isub__(-n)

@@ -908,7 +908,7 @@ class SpikeContainer:
             min_t = converted_dimension.min
         if max_t is None:
             max_t = converted_dimension.max
-        return diff(sorted(st[(st>min_t) * (st <max_t)]))
+        return np.diff(sorted(st[(st>min_t) * (st <max_t)]))
     def ISI_fano_factor(self,time_dimension=0,units=None,min_t=None,max_t=None):
         isis = self.isis(time_dimension=time_dimension,units=units,min_t=min_t,max_t=max_t)
         return np.std(isis)/np.mean(isis)
@@ -1019,7 +1019,9 @@ class SpikeContainer:
             kwargs['cmap'] = kwargs.get('cmap','gray')
             plt.pcolormesh(X, Y, H,**kwargs)
             plt.gca().set_aspect('equal')
-    def temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=False,normalize_n=False,start_units_with_0=True,cell_dimension='N'):
+    def temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,
+                             min_t=None,max_t=None,weight_function=None,normalize_time=False,
+                             normalize_n=False,start_units_with_0=True,cell_dimension='N'):
         """
             Outputs a time histogram of spikes.
 
@@ -1074,13 +1076,17 @@ class SpikeContainer:
             import matplotlib.pylab as plt
             plt.plot(self[time_dimension],self[cell_dimension],'.',**kwargs)
             plt.xlim(min_t, max_t)
-    def smoothed_temporal_firing_rate(self, gaussian_width=10.0, **kwargs):
-        if self.data_format == 'spike_times':
+    def smoothed_temporal_firing_rate(self, gaussian_width=10.0, time_dimension=0, 
+                                    normalize_time=True, normalize_n=True,**kwargs):
+        if bool(self):
             from scipy.ndimage import gaussian_filter1d
-            H, xed = self.temporal_firing_rate(**kwargs)
+            H, xed = self.temporal_firing_rate(time_dimension=time_dimension,
+                                               normalize_time=normalize_time,normalize_n=normalize_n,**kwargs)
             firing_rates = gaussian_filter1d(H,gaussian_width)
             return firing_rates, xed
-    def plot_smoothed_temporal_firing_rate(self, gaussian_width=10.0,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N',**kwargs):
+    def plot_smoothed_temporal_firing_rate(self, gaussian_width=10.0,time_dimension=0,resolution=1.0,units=None,
+                                min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,
+                                start_units_with_0=True,cell_dimension='N',**kwargs):
         """
 
 
