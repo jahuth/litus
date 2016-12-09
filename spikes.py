@@ -1,3 +1,8 @@
+"""
+
+This module contains a (sparse) spike container that labels each spike with information.
+
+"""
 import xml.etree.ElementTree as ET
 import scipy
 import math
@@ -19,12 +24,12 @@ _default_time_unit = 'ms'
 
 conversion_factors_to_seconds = {
         'picoseconds': 0.000000000001, 'ps': 0.000000000001, 
-        'nanoseconds': 0.000000001, 'ns': 0.000000001, 
+        'nanoseconds': 0.000000001, 'ns': 0.000000001,
         'microseconds': 0.000001, 'mus': 0.000001, 
-        'milliseconds': 0.001, 'ms': 0.001, 
+        'milliseconds': 0.001, 'ms': 0.001,
         'seconds': 1.0, 's': 1.0,
         'minutes': 60.0, 'min': 60.0, 
-        'hours': 60.0*60.0, 'h': 60.0*60.0 
+        'hours': 60.0*60.0, 'h': 60.0*60.0
     }
 
 conversion_factors_to_metres = {
@@ -91,7 +96,7 @@ def cell_filter_filename_C(x,cell_designation):
     return 'filename' in x and x['filename'].endswith('C'+str(cell_designation)+'.txt')
 
 class SpikeContainerCollection:
-    def __init__(self,filename_or_data=None,units=None,data_units=None,min_t=0.0,max_t=None,meta=None,labels=None,label_names=None,copy_from=None,**kwargs):
+    def __init__(self,filename_or_data=None,units=None,data_units=None,min_t=0.0,max_t=None,meta=None,labels=None,copy_from=None,**kwargs):
         self.meta = None
         self.units = None
         self.min_t = None
@@ -253,6 +258,11 @@ class LabelDimension(object):
             self.units = units
             self.min = min
             self.max = max
+        elif type(name) == tuple:
+            self.name = name[0]
+            self.units = name[1]
+            self.min = min
+            self.max = max
         else:
             self.name = name.name
             self.units = name.units
@@ -262,24 +272,44 @@ class LabelDimension(object):
         return "LabelDimension('"+self.name+"',"+str(self.units)+","+str(self.min)+","+str(self.max)+")"
     def __repr__(self):
         return "LabelDimension('"+self.name+"',"+str(self.units)+","+str(self.min)+","+str(self.max)+")"
-    def len(self,resolution=1.0,units=None,conversion_function=convert_time):
+    def len(self,resolution=1.0,units=None,conversion_function=convert_time, end_at_end=True):
+        """
+            Calculates the length of the Label Dimension from its minimum, maximum and wether it is discrete.
+
+            `resolution`: 
+            `units`: output units 
+            `conversion_function`: 
+            `end_at_end`: additional switch for continuous behaviour
+        """
         if units is not None:
-            resolution = conversion_function(resolution,from_units=self.units,to_units=units)
+            resolution = conversion_function(resolution,from_units=units,to_units=self.units)
+        else:
+            units = self.units
         if self.min is None:
-            return self.max / resolution
+            return int(self.max / resolution)
         if self.max is None:
             return 0
-        return np.ceil((self.max - self.min) / resolution)
+        if units != '1' and end_at_end:
+            return int(np.ceil((self.max - self.min) / resolution))
+        return int(np.ceil((self.max - self.min) / resolution) + 1)
     def linspace(self,bins=None,units=None,conversion_function=convert_time,resolution=None,end_at_end=True):
         """ bins overwrites resolution """
+        if type(bins) in [list, np.ndarray]:
+            return bins
         min = conversion_function(self.min,from_units=self.units,to_units=units)
         max = conversion_function(self.max,from_units=self.units,to_units=units)
+        if units is None:
+            units = self.units
         if resolution is None:
             resolution = 1.0
         if bins is None:
-            bins = self.len(resolution=resolution,units=units,conversion_function=conversion_function) + 1
-        if end_at_end:
+            bins = self.len(resolution=resolution,units=units,conversion_function=conversion_function)# + 1
+        if units != '1' and end_at_end:
+            # continuous variable behaviour:
+            #   we end with the last valid value at the outer edge
             return np.linspace(min,max,bins+1)[:-1]
+        # discrete variable behaviour:
+        #   we end with the last valid value as its own bin
         return np.linspace(min,max,bins)
     def linspace_bins(self,bins=None,units=None,conversion_function=convert_time,resolution=None):
         """Generates bin edges for a linspace tiling: there is one edge more than bins and each bin is in the middle between two edges"""
@@ -392,6 +422,27 @@ class LabeledMatrix(object):
                         return label_no
             raise Exception("Key not found! "+str(key))
         return key
+    def __contains__(self,key):
+        if type(key) is str:
+            for label_no,label in enumerate(self.labels):
+                    if key == label.name:
+                        return True
+            return False
+        return key < len(self.labels)
+    def __setitem__(self, key, value):
+        if type(key) is tuple:
+            if type(key[1]) is not slice:
+                key = list(key)
+                #if not type(key[1]) is list or type(key[1]) is tuple:
+                #    key[1] = [key[1]]
+                new_key = []
+                for k in key[1]:
+                    new_key.extend(self.find_labels(k))
+                key[1] = new_key
+                key = tuple(key)
+        else:
+            key = tuple([slice(None),self.get_label_no(key)])
+        return self.matrix.__setitem__(key,value)
     def __getitem__(self, key):
         if type(key) is tuple:
             if type(key[1]) is not slice:
@@ -435,11 +486,16 @@ class LabeledMatrix(object):
             for k in kwargs:
                 if k == label.name:
                     constraints.append(self.matrix[:,label_no] == kwargs[k])
+                    new_label.max = kwargs[k]
+                    new_label.min = kwargs[k]
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__lt':
                     constraints.append(self.matrix[:,label_no] < kwargs[k])
-                    new_label.max = np.min([new_label.max,kwargs[k]])
+                    if new_label.units == '1':
+                        new_label.max = np.min([new_label.max,kwargs[k]-1]) # is this right?
+                    else:
+                        new_label.max = np.min([new_label.max,kwargs[k]])
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__lte':
@@ -449,7 +505,10 @@ class LabeledMatrix(object):
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__gt':
                     constraints.append(self.matrix[:,label_no] > kwargs[k])
-                    new_label.min = np.max([new_label.min,kwargs[k]])
+                    if new_label.units == '1':
+                        new_label.min = np.max([new_label.min,kwargs[k]+1])
+                    else:
+                        new_label.min = np.max([new_label.min,kwargs[k]])
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
                 if k == label.name+'__gte':
@@ -468,12 +527,19 @@ class LabeledMatrix(object):
             return LabeledMatrix(st[:,[r for r in remaining_label_dimensions]],[l for li,l in enumerate(new_labels) if li in remaining_label_dimensions])
         return LabeledMatrix(st,new_labels)
     def add_label_dimension(self,name,label_data,label_label=None):
+        if type(label_data) in [float,bool,int]:
+            label_data = np.array(label_data)
         if len(label_data.shape) == 1:
             if label_label is None:
                 label_label = LabelDimension(name)
             else:
                 if type(name) is str:
-                    label_label = LabelDimension(name, units=label_label.units, min=label_label.min, max=label_label.max)
+                    if type(label_label) is str:
+                        label_label = LabelDimension(name, units=label_label)
+                    elif type(label_label) is tuple:
+                        label_label = LabelDimension(name, units=label_label[1])
+                    else:
+                        label_label = LabelDimension(name, units=label_label.units, min=label_label.min, max=label_label.max)
             self.labels.append(label_label)
             self.matrix = np.concatenate([self.matrix,label_data[:,np.newaxis]],1)
         if len(label_data.shape) == 2:
@@ -514,7 +580,7 @@ class LabeledMatrix(object):
         """
         constraints = []
         remove_dimensions = kwargs.pop('remove_dimensions',False)
-        resolution = kwargs.pop('resolution',None) 
+        resolution = kwargs.get('resolution',None) 
         bins = kwargs.get('bins',None) 
         if len(args) == 0:
             generator_indizes = range(1,len(self.labels))
@@ -544,6 +610,14 @@ class SpikeContainer:
 
             `units`: 
                 a string representing a time unit (in most cases 'ms' or 's')
+                can also be 'm','km','mm','nm','pm' for lengths
+                or '1' for discrete values or '1.0' for continuous values without units.
+
+                Discrete values will behave differently when using `.generate` and `.linspace`
+                To emulate the discrete behaviour, you can pass `end_at_end=False` to the
+                respective functions.
+                The default behaviour is continuous if `units != '1'`.
+
             `spike_times`: 
                 float values that give the time of the spike event (in the specified `units`)
             `t_min`,`t_max`: 
@@ -608,12 +682,21 @@ class SpikeContainer:
                 self.set_spike_times(filename_or_data,units,min_t=min_t,max_t=max_t,data_units=data_units,labels=labels)
             except:
                 raise
+    def copy(self,**kwargs):
+        """
+            Copies the spikes and optionally converts the spike times.
+            (when the keyword units is not None)
+        """
+        new_spike_times = LabeledMatrix(self.spike_times.matrix,self.spike_times.labels) # copies the data
+        return SpikeContainer(new_spike_times, copy_from=self,**kwargs)
     def __str__(self):
         return "Spike Container with dimensions: "+", ".join([str(l) for l in self.spike_times.labels])
     def __repr__(self):
         return "Spike Container with dimensions: "+", ".join([repr(l) for l in self.spike_times.labels])
     def __nonzero__(self):
         return bool(self.spike_times)
+    def __contains__(self,key):
+        return self.spike_times.__contains__(key)
     def store_meta(self,meta):
         "Inplace method that adds meta information to the meta dictionary"
         if self.meta is None:
@@ -662,8 +745,10 @@ class SpikeContainer:
         if self.data_format == 'empty':
             return SpikeContainer(None,units=self.units,copy_from=self)
         spike_times = self.spike_times.get_converted(time_dimension, units=time_units)[1].copy() # this is read only
+        time_signals = np.array(time_signals)
         re_zeroed_spike_times = spike_times.copy() # this will be modified
         indizes = np.zeros((len(spike_times),time_signals.shape[0] -1 ))
+        maximal_time_gap = np.max(np.diff(time_signals[0]))
         for t in range(len(time_signals[0])):
             if t + 1 < len(time_signals[0]):
                 # we are past the last time signal
@@ -683,8 +768,11 @@ class SpikeContainer:
         new_spike_times.add_label_dimension(label_names,indizes)
         new_spike_times.labels[0].units = time_units
         new_spike_times.matrix[:,0] = re_zeroed_spike_times
-        new_spike_times.labels[0].min = np.min(re_zeroed_spike_times)
-        new_spike_times.labels[0].max = np.max(re_zeroed_spike_times)
+        new_spike_times.labels[0].min = 0
+        new_spike_times.labels[0].max = maximal_time_gap
+        if kwargs.get('recalculate_time_extent',False):
+            new_spike_times.labels[0].min = np.min(re_zeroed_spike_times)
+            new_spike_times.labels[0].max = np.max(re_zeroed_spike_times)
         if backup_original_spike_times_to is not None:
             new_spike_times.add_label_dimension(backup_original_spike_times_to,self[time_dimension])
         if copy:
@@ -701,6 +789,26 @@ class SpikeContainer:
             #    self[backup_original_spike_times_to] = {'data':self[time_dimension],'label': time_label}
             self.set_spike_times(new_spike_times)
             return self
+    def _absolute_spike_times_from_labels(self,time_dimension=0,*args,**kwargs):
+        """
+            internal function that gives absolute_spike_times_from_labels, as well as 
+            the factor (maximum range)
+        """
+        x = self[time_dimension].copy()
+        #x = self.spike_times.get_converted(time_dimension,kwargs.get('units',None))
+        factor = self.len(time_dimension,units=kwargs.get('units',None),resolution=kwargs.get('resolution',1.0))
+        for a in args:
+            if a in self:
+                x += factor * self[a]
+                factor *= self.len(a)
+        for k in kwargs.keys():
+            if k in self:
+                x += factor * self[k]
+                if kwargs[k] is not None:
+                    factor *= kwargs[k]
+                else:
+                    factor *= self.len(k)
+        return x,factor
     def absolute_spike_times_from_labels(self,time_dimension=0,*args,**kwargs):
         """
             Creates a list of spike times where each value of the supplied dimensions
@@ -721,18 +829,20 @@ class SpikeContainer:
 
             If the keyword has the value `None`, the length of the dimension is used.
         """
-        x = self[time_dimension]
-        factor = self.len(time_dimension)
-        for a in args:
-            x += factor * self[a]
-            factor *= self.len(a)
-        for k in kwargs.keys():
-            x += factor * self[a]
-            if kwargs[k] is not None:
-                factor *= kwargs[k]
-            else:
-                factor *= self.len(k)
-        return x
+        return self._absolute_spike_times_from_labels(time_dimension,*args,**kwargs)[0]
+    def add_absolute_spike_times_from_labels(self,new_time_dimension,time_dimension=0,*args,**kwargs):
+        """
+
+        """
+        x, factor = self._absolute_spike_times_from_labels(time_dimension,*args,**kwargs)
+        self[new_time_dimension] = {
+                        'data':  x,
+                        'label': LabelDimension(new_time_dimension,units=self.get_units(time_dimension),min=0,max=factor)
+                        }
+    def copy_with_absolute_spike_times_from_labels(self,time_dimension=0,*args,**kwargs):
+        new_spike_times = LabeledMatrix(self.spike_times.matrix,self.spike_times.labels) # copies the data
+        new_spike_times[time_dimension] = self._absolute_spike_times_from_labels(time_dimension,*args,**kwargs)[0]
+        return SpikeContainer(new_spike_times, copy_from=self)
     def label_peri_signals(self,time_signals,label_names=[],units=None,data_units=None,copy=True, pre_signal = 100.0, post_signal = 1000.0, **kwargs):
         """
             creates a labeled spike data structure
@@ -784,6 +894,24 @@ class SpikeContainer:
         self.spike_containers = None
         self.min_t = None
         self.max_t = None
+    def ISIs(self,time_dimension=0,units=None,min_t=None,max_t=None):
+        """
+            returns the Inter Spike Intervals
+
+                `time_dimension`: which dimension contains the spike times (by default the first)
+
+                `units`,`min_t`,`max_t`: define the units of the output and the range of spikes that should be considered
+        """
+        units = self._default_units(units)
+        converted_dimension,st = self.spike_times.get_converted(time_dimension,units)
+        if min_t is None:
+            min_t = converted_dimension.min
+        if max_t is None:
+            max_t = converted_dimension.max
+        return np.diff(sorted(st[(st>min_t) * (st <max_t)]))
+    def ISI_fano_factor(self,time_dimension=0,units=None,min_t=None,max_t=None):
+        isis = self.isis(time_dimension=time_dimension,units=units,min_t=min_t,max_t=max_t)
+        return np.std(isis)/np.mean(isis)
     def set_spike_times(self,data,units=None,min_t=0.0,max_t=None,data_units=None,labels=None,correct_missing_time_dimensions=False):
         units = self._default_units(units)
         if type(data) is LabeledMatrix:
@@ -887,11 +1015,13 @@ class SpikeContainer:
                 else:
                     bins = (self.linspace_bins(label_x,resolution=resolution),self.linspace_bins(label_y,resolution=resolution))
             H,xed,yed = self.spatial_firing_rate(label_x=label_x,label_y=label_y,bins=bins,geometry=geometry,weight_function=weight_function,normalize_time=normalize_time,normalize_n=False,start_units_with_0=start_units_with_0)
-            X, Y = np.meshgrid(xed, yed)
+            Y, X = np.meshgrid(yed, xed)
             kwargs['cmap'] = kwargs.get('cmap','gray')
             plt.pcolormesh(X, Y, H,**kwargs)
             plt.gca().set_aspect('equal')
-    def temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=False,normalize_n=False,start_units_with_0=True,cell_dimension='N'):
+    def temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,
+                             min_t=None,max_t=None,weight_function=None,normalize_time=False,
+                             normalize_n=False,start_units_with_0=True,cell_dimension='N'):
         """
             Outputs a time histogram of spikes.
 
@@ -921,6 +1051,8 @@ class SpikeContainer:
             if normalize_n:
                 H = H/(len(np.unique(self.spike_times[cell_dimension])))
             return H,edg
+    def binary_firing_rate(self,*args,**kwargs):
+        return 1.0*(self.temporal_firing_rate(*args,**kwargs)[0] > 0)
     def plot_temporal_firing_rate(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=False,normalize_n=False,start_units_with_0=True,cell_dimension='N',**kwargs):
         """
             Plots a firing rate plot.
@@ -944,13 +1076,17 @@ class SpikeContainer:
             import matplotlib.pylab as plt
             plt.plot(self[time_dimension],self[cell_dimension],'.',**kwargs)
             plt.xlim(min_t, max_t)
-    def smoothed_temporal_firing_rate(self, gaussian_width=10.0, **kwargs):
-        if self.data_format == 'spike_times':
+    def smoothed_temporal_firing_rate(self, gaussian_width=10.0, time_dimension=0, 
+                                    normalize_time=True, normalize_n=True,**kwargs):
+        if bool(self):
             from scipy.ndimage import gaussian_filter1d
-            H, xed = self.temporal_firing_rate(**kwargs)
+            H, xed = self.temporal_firing_rate(time_dimension=time_dimension,
+                                               normalize_time=normalize_time,normalize_n=normalize_n,**kwargs)
             firing_rates = gaussian_filter1d(H,gaussian_width)
             return firing_rates, xed
-    def plot_smoothed_temporal_firing_rate(self, gaussian_width=10.0,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N',**kwargs):
+    def plot_smoothed_temporal_firing_rate(self, gaussian_width=10.0,time_dimension=0,resolution=1.0,units=None,
+                                min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,
+                                start_units_with_0=True,cell_dimension='N',**kwargs):
         """
 
 
@@ -1003,6 +1139,16 @@ class SpikeContainer:
             If set to an integer, the dimension used for generation will be split into `bins` many, equal parts.
         reversed:       True
             Whether argument list should be reversed, such that the first argument is rotated first.
+
+        .. note::
+
+            Discrete Labels (units='1') will behave differently than continuous Labels (units='1.0' or 's' etc.)
+            To emulate the discrete behaviour, you can pass `end_at_end=False` to the function.
+            The default behaviour is continuous if `units != '1'` (that is the output units if specified).
+
+            Generating discretely from 0...5 will yield 6 times: 0, 1, 2, 3, 4, 5 while generating continuously
+            will generate only 5 iterations: 0.0-1.0,1.0-2.0,2.0-3.0,3.0-4.0,4.0-5.0 (at a resolution of 1.0).
+
         """
         for st in self.spike_times.generate(*args,**kwargs):
             yield SpikeContainer(st, copy_from=self)
@@ -1011,6 +1157,7 @@ class SpikeContainer:
             Returns the number of spikes or the length of a Dimension in the respective unit::
 
                 spikes.len()    # returns the number of entries ie. the number of spikes
+
                 spikes.len('t') # returns eg. ms
                 spikes.len('N') # returns the number of neurons ()
 
@@ -1019,12 +1166,47 @@ class SpikeContainer:
             # Note: a previous version of this function created the total length of the combination 
                of the supplied arguments (given they are discrete). This behaviour can be recreated 
                by calling np.prod() in the result.
+
+            .. note::
+
+                Discrete Labels (units='1') *may* behave differently than continuous Labels (units='1.0' or 's' etc.)
+                To emulate the discrete behaviour, you can pass `end_at_end=False` to the function.
+                The default behaviour is continuous if `units != '1'` (that is the output units if specified).
+
+                The length of a discrete variable from 0...5 is 6: 0, 1, 2, 3, 4, 5.
+                The length of the same range continuously is 5:
+                    0.0-1.0,1.0-2.0,2.0-3.0,3.0-4.0,4.0-5.0 (at a resolution of 1.0).
         """
         if len(args) == 0 or args == None:
             return self.spike_times.matrix.shape[0]
         if len(args) == 1:
-            return self.spike_times.get_label(args[0]).len()
-        return [self.spike_times.get_label(a).len() for a in args]
+            return self.spike_times.get_label(args[0]).len(**kwargs)
+        return [self.spike_times.get_label(a).len(**kwargs) for a in args]
+    def get_units(self,*args,**kwargs):
+        """
+            Returns the units of a Dimension
+        """
+        if len(args) == 1:
+            return self.spike_times.get_label(args[0]).units
+        return [self.spike_times.get_label(a).units for a in args]
+    def get_min(self,*args,**kwargs):
+        """
+            Returns the minimum of a Dimension
+
+            TODO: conversion is not implemented yet but should be
+        """
+        if len(args) == 1:
+            return self.spike_times.get_label(args[0]).min
+        return [self.spike_times.get_label(a).max for a in args]
+    def get_max(self,*args,**kwargs):
+        """
+            Returns the maximum of a Dimension
+
+            TODO: conversion is not implemented yet but should be
+        """
+        if len(args) == 1:
+            return self.spike_times.get_label(args[0]).max
+        return [self.spike_times.get_label(a).max for a in args]
     def linspace(self,dim,*args,**kwargs):
         """
             Creates a range of values for a specific dimension that go from its minimum to its 
@@ -1035,6 +1217,16 @@ class SpikeContainer:
             units=None
             conversion_function=convert_time
             resolution=None
+
+            .. note::
+
+                Discrete Labels (units='1') will behave differently than continuous Labels (units='1.0' or 's' etc.)
+                To emulate the discrete behaviour, you can pass `end_at_end=False` to the function,
+                The default behaviour is continuous if `units != '1'` (that is the output units if specified).
+
+                A linspace from 0...5 will give 0, 1, 2, 3, 4, 5 (6 steps) for a discrete variable while
+                a continuous variable will be split into: 0.0-1.0,1.0-2.0,2.0-3.0,3.0-4.0,4.0-5.0
+                in 5 bins (at a resolution of 1.0).
         """
         return self.spike_times.get_label(dim).linspace(*args,**kwargs)
     def linspace_bins(self,dim,*args,**kwargs):
@@ -1042,6 +1234,8 @@ class SpikeContainer:
             Like linspace, but shifts the space to create edges for histograms.
         """
         return self.spike_times.get_label(dim).linspace_bins(*args,**kwargs)
+    def get_label(self,key):
+        return self.spike_times.get_label(key)
     def _find_keys(self,key):
         if type(key) is str:
             found_keys = []
