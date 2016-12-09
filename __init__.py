@@ -3,6 +3,7 @@ from subprocess import call
 import json
 from copy import copy
 import re
+#import lindex
 
 _session_description = ""
 _last_inputs = []
@@ -62,7 +63,7 @@ def unsnip(tag=None,start=-1):
         if len(_last_inputs) > 0:
             i.set_next_input(_last_inputs[start])
 
-def animate(a,r=25,every_nth_frame=5,cmap='gray',tmp_dir='tmp',frame_prefix='frame_',animation_name='animation.mp4',func=None):
+def animate(a,r=25,every_nth_frame=1,cmap='gray',tmp_dir='tmp',frame_prefix='frame_',animation_name='animation.mp4',func=None):
     import os,io,glob
     import base64
     import matplotlib.pylab as plt
@@ -105,11 +106,134 @@ def animate(a,r=25,every_nth_frame=5,cmap='gray',tmp_dir='tmp',frame_prefix='fra
                     <source src="data:video/mp4;base64,{0}" type="video/mp4" />
                  </video>'''.format(encoded.decode('ascii')))
 
+class Figure:
+    """
+    Figure Context Manager
+
+    Can be used with the **with** statement::
+
+        import litus
+        import numpy as np
+        import matplotlib.pylab as plt
+        x = np.arange(0,10,0.1)
+        with litus.figure("some_test.png") as f:
+            plt.plot(x,np.cos(x))    # plots to a first plot
+            with litus.figure("some_other_test.png"):
+                plt.plot(-1*np.array(x)) # plots to a second plot
+            plt.plot(x,np.sin(x))    # plots to the first plot again
+            f.set_tight_layout(True) # using the figure object
+
+
+    Or if they are to be used in an interactive console::
+
+
+        import litus
+        import numpy as np
+        import matplotlib.pylab as plt
+        x = np.arange(0,10,0.1)
+        with litus.figure("some_test.png",display=True):
+            plt.plot(x,np.cos(x))    # plots to a first plot
+            with litus.figure("some_other_test.png",close=False):
+                plt.plot(-1*np.array(x)) # plots to a second plot
+            plt.plot(x,np.sin(x))    # plots to the first plot again
+
+    Both figures will be displayed, but the second one will remain available after the code is executed. (But keep in mind that in the iPython pylab console, after every input, all figures will be closed)
+
+    """
+    def __init__(self,path,display=False,close=True):
+        self.path = path
+        self.display = display
+        self._close = close
+        self.fig_stack = []
+        self.axis_stack = []
+        self.fig = None
+        self.axis = None
+    def __enter__(self):
+        import matplotlib.pyplot as plt
+        self.fig_stack.append(plt.gcf())
+        self.axis_stack.append(plt.gca())
+        if self.fig is None:
+            self.fig = plt.figure()
+            self.axis = self.fig.gca()
+        else:
+            plt.figure(self.fig.number)
+        return self.fig
+    def __exit__(self, type, value, tb):
+        import matplotlib.pyplot as plt
+        if self.path is not None and self.path != "":
+            self.fig.savefig(self.path)
+        if self.display:
+            try:
+                # trying to use ipython display
+                IPython.core.display.display(self.fig)
+            except:
+                # otherwise presume that we run with some other gui backend. If we don't, nothing will happen.
+                self.fig.show(warn=False)
+        if self._close:
+            plt.close(self.fig)
+            self.fig = None
+            self.fig_stack.pop()
+            self.axis_stack.pop()
+        else:
+            fig = self.fig_stack.pop()
+            ax = self.axis_stack.pop()
+            plt.figure(fig.number)
+            plt.sca(ax)
+    def show(self,close=True):
+        if self.path is not None and self.path != "":
+            self.fig.savefig(self.path)
+        try:
+            # trying to use ipython display
+            IPython.core.display.display(self.fig)
+        except:
+            # otherwise presume that we run with some other gui backend. If we don't, nothing will happen.
+            self.fig.show(warn=False)
+        if close == True:
+            self.close()
+    def close(self):
+        import matplotlib.pyplot as plt
+        plt.close(self.fig)
+
+def figure(path,display=False,close=True):
+    """
+    Can be used with the **with** statement::
+
+        import litus
+        import numpy as np
+        import matplotlib.pylab as plt
+        x = np.arange(0,10,0.1)
+        with litus.figure("some_test.png") as f:
+            plt.plot(x,np.cos(x))    # plots to a first plot
+            with litus.figure("some_other_test.png"):
+                plt.plot(-1*np.array(x)) # plots to a second plot
+            plt.plot(x,np.sin(x))    # plots to the first plot again
+            f.set_tight_layout(True) # using the figure object
+
+
+    Or if they are to be used in an interactive console::
+
+
+        import litus
+        import numpy as np
+        import matplotlib.pylab as plt
+        x = np.arange(0,10,0.1)
+        with litus.figure("some_test.png",display=True):
+            plt.plot(x,np.cos(x))    # plots to a first plot
+            with litus.figure("some_other_test.png",close=False):
+                plt.plot(-1*np.array(x)) # plots to a second plot
+            plt.plot(x,np.sin(x))    # plots to the first plot again
+
+    Both of these figures will be displayed, but the second one will remain open and can be activated again.
+
+
+    """
+    return Figure(path,display=display,close=close)
+
 
 #############################################
 ## Alert someone
 
-def alert(msg,body="",icon="/home/jacob/Projects/Silversight/icons/kernel.svg"):
+def alert(msg,body="",icon=None):
     """
         alerts the user of something happening via `notify-send`. If it is not installed, the alert will be printed to the console.
     """
@@ -367,9 +491,52 @@ def recgen_enumerate(gen,n=tuple()):
                 yield element
 
 #############################################
+## list of dictionaries / dictioanries of lists
+
+def list_of_dicts_to_dict_of_lists(list_of_dictionaries):
+    """
+        Takes a list of dictionaries and creates a dictionary with the combined values for 
+        each key in each dicitonary.
+        Missing values are set to `None` for each dicitonary that does not contain a key 
+        that is present in at least one other dicitonary.
+
+            >>> litus.list_of_dicts_to_dict_of_lists([{'a':1,'b':2,'c':3},{'a':3,'b':4,'c':5},{'a':1,'b':2,'c':3}])
+
+            {'a': [1, 3, 1], 'b': [2, 4, 2], 'c': [3, 5, 3]}
+
+        Shorthand: `litus.ld2dl(..)`
+    """
+    result = {}
+    all_keys = set([k for d in  list_of_dictionaries for k in d.keys()])
+    for d in list_of_dictionaries:
+        for k in all_keys:
+            result.setdefault(k,[]).append(d.get(k,None))
+    return result
+
+ld2dl = list_of_dicts_to_dict_of_lists
+
+def dict_of_lists_to_list_of_dicts(dictionary_of_lists):
+    """
+        Takes a dictionary of lists and creates a list of dictionaries.
+        If the lists are of unequal length, the remaining entries are set to `None`.
+
+        Shorthand: `litus.dl2ld(..)`:
+
+            >>> litus.dl2ld({'a': [1, 3, 1], 'b': [2, 4, 2], 'c': [3, 5, 3]})
+
+            [{'a': 1, 'b': 2, 'c': 3}, {'a': 3, 'b': 4, 'c': 5}, {'a': 1, 'b': 2, 'c': 3}]
+
+    """
+    return [{key: dictionary_of_lists[key][index] if len(dictionary_of_lists[key]) > index else None for key in dictionary_of_lists.keys()}
+         for index in range(max(map(len,dictionary_of_lists.values())))]
+
+dl2ld = dict_of_lists_to_list_of_dicts
+
+
+#############################################
 ## plot things
 
-def color_space(colormap, a, start=0.1, stop=0.9, len=None):
+def color_space(colormap, a, start=0.1, stop=0.9, length=None):
     if type(colormap) is str:
         from matplotlib import cm
         if colormap in cm.__dict__:
@@ -378,16 +545,23 @@ def color_space(colormap, a, start=0.1, stop=0.9, len=None):
             colormap = cm.gnuplot
     if type(a) is int or type(a) is float:
         return colormap(np.linspace(start,stop,int(a)))
-    return colormap(np.linspace(start,stop,len if len is not None else len(a)))
+    return colormap(np.linspace(start,stop,length if length is not None else len(a)))
 
-def colorate(sequence, colormap="", start=0, len=None):
+def colorate(sequence, colormap="", start=0, length=None):
     """ like enumerate, but with colors """
     n = start
-    colors = color_space(colormap, sequence, start=0.1, stop=0.9, len=len)
+    colors = color_space(colormap, sequence, start=0.1, stop=0.9, length=length)
     for elem in sequence:
         yield n, colors[n-start], elem
         n += 1
 
+def plot_corridor(x,y,axis=1,alpha=0.2,**kwargs):
+    x = np.array(x,dtype=float)
+    from matplotlib.pylab import fill_between, plot
+    fill_between(x, y.mean(axis)-y.std(axis), y.mean(axis)+y.std(axis),alpha=alpha,**kwargs)
+    plot(x, y.mean(axis)+y.std(axis),'-',alpha=alpha,**kwargs)
+    plot(x, y.mean(axis)-y.std(axis),'-',alpha=alpha,**kwargs)
+    plot(x,y.mean(axis),**kwargs)
 
 #################################################
 ## Parameter / Data Collectors
@@ -678,7 +852,17 @@ class Lists:
     def transpose(self,n=-1):
         return self.array(n).transpose()
     def mean(self,dims=None,n=-1):
-        return np.mean(self.array(n),dims)
+        return np.mean(self.array(n),self._check_dims(dims))
+    def sum(self,dims=None,n=-1):
+        return np.sum(self.array(n),self._check_dims(dims))
+    def nanmean(self,dims=None,n=-1):
+        return np.nanmean(self.array(n),self._check_dims(dims))
+    def nansum(self,dims=None,n=-1):
+        return np.nansum(self.array(n),self._check_dims(dims))
+    def _check_dims(self,dims):
+        if type(dims) in [list,tuple]:
+            return [self[d] if type(d) is str else d for d in dims]
+        return dims
     def __getitem__(self,key):
         for i,n in enumerate(self.dimension_names):
             if n == key:
