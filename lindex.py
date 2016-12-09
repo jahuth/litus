@@ -1,4 +1,4 @@
-from . import ld2dl, dl2ld
+from .__init__ import ld2dl, dl2ld
 import numpy as np
 
 def _replace_operators(k):
