@@ -1292,103 +1292,6 @@ class SpikeContainer:
             key = self._find_keys(key)[0]
         st = self.spike_times
         return st[key]
-    # Below are some functions that might be deprecated at some point
-    def _deprecated__get_spike_array(self,resolution=1.0,units=None,min_t=None,max_t=None):
-        units = self._default_units(units)
-        if self.data_format == 'spike_times':
-            times = convert_time(self.spike_times,from_units=self.units,to_units=units)
-            if min_t is None:
-                min_t = convert_time(self.min_t,from_units=self.units,to_units=units)
-            if max_t is None:
-                max_t = convert_time(self.max_t,from_units=self.units,to_units=units)
-            spike_array = np.zeros(int(np.ceil((max_t-min_t) / resolution)))
-            for t in times:
-                # assuming one dimensional data for now?
-                if min_t is not None and t < min_t:
-                    continue
-                if  max_t is not None and t >= max_t:
-                    continue
-                spike_array[int((t-min_t) / resolution)] += 1
-            return spike_array
-        if self.data_format == 'empty':
-            return np.zeros(int(np.ceil((max_t-min_t) / resolution)))
-        if self.data_format == 'spike_containers':
-            if min_t is None:
-                min_t = convert_time(self.min_t,from_units=self.units,to_units=units)
-            if max_t is None:
-                max_t = convert_time(self.max_t,from_units=self.units,to_units=units)
-            return np.array([sc.get_spike_array(resolution=resolution,units=units,min_t=min_t,max_t=max_t) for sc in self.spike_containers])
-    def _deprecated__get_spike_array_index(self,resolution=1.0,units=None,min_t=None,max_t=None):
-        units = self._default_units(units)
-        if min_t is None:
-            min_t = convert_time(self.min_t,from_units=self.units,to_units=units)
-        if max_t is None:
-            max_t = convert_time(self.max_t,from_units=self.units,to_units=units)
-        return np.arange(min_t,max_t,resolution)
-    def _deprecated__get_filtered_spike_times(self,label_filter,units=None,min_t=None,max_t=None):
-        units = self._default_units(units)
-        if self.data_format == 'spike_times':
-            filt = np.all(self.labels[:,:len(label_filter)] == label_filter,1)
-            #return self.spike_times[]
-            return np.concatenate([np.array([self.spike_times[filt]]).transpose(), self.labels[filt,:]], 1)
-        if self.data_format == 'spike_containers':
-            return np.array([sc.get_filtered_spike_times(label_filter=label_filter,units=units,min_t=min_t,max_t=max_t) for sc in self.spike_containers])
-    def _deprecated__get_dimensions_index(self,filter=''):
-        if self.data_format == 'spike_containers':
-            return self.spike_containers[0]._deprecated__get_dimensions_index(filter)
-        if self.data_format == 'empty':
-            return None
-        if self.spike_times.labels is not None:
-            for i,l in enumerate(self.spike_times.labels):
-                if filter in l:
-                    return i
-    def _deprecated__get_dimensions_indizes(self,filter=''):
-        if self.data_format == 'spike_containers':
-            return self.spike_containers[0]._deprecated__get_dimensions_indizes(filter)
-        if self.data_format == 'empty':
-            return []
-        if self.spike_times.labels is not None:
-            return [i for i,l in enumerate(self.spike_times.labels) if filter in l]
-    def _deprecated__get_dimensions_with(self,filter=''):
-        if self.data_format == 'spike_times':
-            return icartesian([range(int(self.index_dimensions[t])) for t in range(len(self.index_dimensions)) if 
-                                                                                    filter == '' 
-                                                                                    or len(self.spike_times.labels) <= t 
-                                                                                    or filter in self.spike_times.labels[t]])
-        if self.data_format == 'spike_containers':
-            return self.spike_containers[0]._deprecated__get_dimensions_with(filter)
-        if self.data_format == 'empty':
-            return np.array([[]])
-    def _deprecated__get_dimensions_without(self,filter=''):
-        if self.data_format == 'spike_times':
-            return icartesian([range(int(self.index_dimensions[t])) for t in range(len(self.index_dimensions)) if 
-                                                                                    filter == '' 
-                                                                                    or len(self.spike_times.labels) <= t 
-                                                                                    or not filter in self.spike_times.labels[t]])
-        if self.data_format == 'spike_containers':
-            return self.spike_containers[0]._deprecated__get_dimensions_without(filter)
-        if self.data_format == 'empty':
-            return np.array([[]])
-    def _deprecated__plot(self,units=None,y=0,marker='|',min_t=None,max_t=None,**kwargs):
-        """
-        Plots the pointprocess as points at line `y`.
-
-        `marker` determines the color and shape of the marker. Default is a vertical line '|'
-        """
-        units = self._default_units(units)
-        if self.data_format == 'spike_times':
-            spike_times = self.get_spike_times(units)
-            if spike_times is not None:
-                return pl.plot(spike_times,[y]*len(spike_times),marker,**kwargs)
-        if self.data_format == 'spike_containers':
-            for y_plus,sc in enumerate(self.spike_containers):
-                sc.plot(units=units,y=y+y_plus,marker=marker,**kwargs)
-            return y+y_plus
-    def _deprecated__plot_arr(self,resolution=1.0,units=None,min_t=None,max_t=None,**kwargs):
-        units = self._default_units(units)
-        return pl.plot(
-                    sc.get_spike_array_index(resolution=resolution,units=units,min_t=min_t,max_t=max_t),
-                    sc.get_spike_array(resolution=resolution,units=units,min_t=min_t,max_t=max_t),**kwargs)
     def create_SpikeGeneratorGroup(self,time_label=0,index_label=1,reorder_indices=False,index_offset=True):
         """
             Creates a brian 2 create_SpikeGeneratorGroup object that contains the spikes in this container.
@@ -1419,5 +1322,36 @@ class SpikeContainer:
             N = len(indices_levels)
         return brian2.SpikeGeneratorGroup(N+1,indices = indices,
                                             times = spike_times)
+    def to_neo(self,index_label='N',time_label=0,name='segment of exported spikes',index=0):
+        """
+            Returns a `neo` Segment containing the spike trains.
 
+            Example usage::
+
+                import quantities as pq
+
+                seg = sp.to_neo()
+
+                fig = pyplot.figure()
+                trains = [st.rescale('s').magnitude for st in seg.spiketrains]
+                colors = pyplot.cm.jet(np.linspace(0, 1, len(seg.spiketrains)))
+                gca().eventplot(trains, colors=colors)
+                gca().set_title(seg.file_origin)
+
+                f = neo.io.AsciiSpikeTrainIO('a_spike_file.txt')
+                f.write_segment(seg)
+
+        """
+        import neo
+        from quantities import s
+        seq = neo.Segment(name=name,index=index)
+        t_start = None
+        t_stop = None
+        if self.min_t is not None:
+            t_start = convert_time(self.min_t,from_units=self.units,to_units='s')*s
+        if self.max_t is not None:
+            t_stop = convert_time(self.max_t,from_units=self.units,to_units='s')*s
+        for train in self.generate(index_label):
+            seq.spiketrains.append(neo.SpikeTrain(train.spike_times.get_converted(time_label,'s')[1]*s,t_start=t_start,t_stop=t_stop))
+        return seq
 

@@ -64,7 +64,7 @@ def unsnip(tag=None,start=-1):
             i.set_next_input(_last_inputs[start])
 
 def animate(a,r=25,every_nth_frame=1,cmap='gray',tmp_dir='tmp',frame_prefix='frame_',animation_name='animation.mp4',func=None):
-    import os,io,glob
+    import os,io,glob,subprocess
     import base64
     import matplotlib.pylab as plt
     from IPython.display import HTML
@@ -84,9 +84,12 @@ def animate(a,r=25,every_nth_frame=1,cmap='gray',tmp_dir='tmp',frame_prefix='fra
         os.remove(tmp_dir+'/'+animation_name)
     except:
         pass
+    if len(a) == 0:
+        return
+    if type(a) != np.ndarray:
+        a = [aa for aa in a]
     if func == None:
         max_shape = np.max([aa.shape for aa in a if type(aa)==np.ndarray],0)
-
     for ti,t in enumerate(trange(0,len(a),every_nth_frame)):
         if func == None:
             plt.figure()
@@ -99,8 +102,13 @@ def animate(a,r=25,every_nth_frame=1,cmap='gray',tmp_dir='tmp',frame_prefix='fra
             func(a[t])
         plt.savefig(tmp_dir+'/'+frame_prefix+'%04d.png'%ti)
         plt.close()
-    os.system("avconv -i "+tmp_dir+'/'+frame_prefix+"%04d.png -r "+str(r)+" "+tmp_dir+'/'+animation_name)
-    video = io.open(tmp_dir+'/'+animation_name, 'r+b').read()
+    o = ""
+    try:
+        o = subprocess.check_output("avconv -i "+tmp_dir+'/'+frame_prefix+"%04d.png -r "+str(r)+" "+tmp_dir+'/'+animation_name)
+        video = io.open(tmp_dir+'/'+animation_name, 'r+b').read()
+    except:
+        print o
+        raise
     encoded = base64.b64encode(video)
     return HTML(data='''<video alt="test" autoplay loop controls>
                     <source src="data:video/mp4;base64,{0}" type="video/mp4" />
