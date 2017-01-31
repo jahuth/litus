@@ -1,4 +1,3 @@
-from .__init__ import ld2dl, dl2ld
 import numpy as np
 
 def _replace_operators(k):
@@ -64,6 +63,7 @@ _magic_keys = {
 }   
 class ContainerList(object):
     def __init__(self,list_of_things,list_of_indizes):
+        from .__init__ import ld2dl, dl2ld
         import copy
         self.contained_list = list_of_things
         if type(list_of_indizes) == list or type(list_of_indizes) == tuple:
@@ -238,11 +238,11 @@ def tree(s,args):
 def tree_plot(t,indent='',print_leaves=False):
     if not hasattr(t,'keys'):
         if print_leaves:
-            print indent,t
+            print(( indent,t))
         return
-    print indent,' \\',t.keys()[0],'in',np.array(t[t.keys()[0]].keys())
+    print(( indent,' \\',t.keys()[0],'in',np.array(t[t.keys()[0]].keys())))
     for tk,tv in t[t.keys()[0]].items():
-        print indent,' |',t.keys()[0],'=',tk
+        print(( indent,' |',t.keys()[0],'=',tk))
         tree_plot(tv,indent+' ')
 def create(a_list,some_indizes):
     return Index(ContainerList(a_list,some_indizes))

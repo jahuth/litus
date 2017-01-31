@@ -3,7 +3,7 @@ from subprocess import call
 import json
 from copy import copy
 import re
-import lindex
+from . import lindex
 
 _session_description = ""
 _last_inputs = []
@@ -245,7 +245,7 @@ def alert(msg,body="",icon=None):
         else:
             call(["notify-send",msg,body])
     else:
-        print "ALERT: ", msg
+        print(("ALERT: ", msg))
 
 #############################################
 ## Math things
@@ -281,7 +281,7 @@ class FlatKernel(object):
         return (self.i[0] + self.i[1] * stride_length).flatten()
     def get(self, stride_length):
         k,i = self.get_kernel(), self.get_indizes(stride_length)
-        print k.shape, i.shape
+        print(( k.shape, i.shape))
         return k[k!=0.0],i[k!=0.0]
 
 from cmath import rect, phase
