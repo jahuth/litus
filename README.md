@@ -120,3 +120,65 @@ Provide a parameter - data mapping for result files. A json index file is used t
 ## `litus.spikes`
 
 Provides a labeld spike class for working with sparse point data.
+
+
+## `litus.lindex`
+
+Provides a combined list + index. For best results use with iPython or some other interactive shell that allows tab completion.
+
+```python
+In [1]: import litus
+In [2]: l = litus.lindex.create([1,2,3],{'even':[0,1,0],'lucky':[0,0,1]})
+In [3]: l
+Out[3]: Container with 3/3 Elements selected.
+In [4]: l.<tab completion>
+l.c           l.filter      l.indizes     l.random      l.value
+l.choices     l.generate    l.levels      l.set_values  
+In [4]: l(lucky=1)
+Out[4]: Container with 1/3 Elements selected.
+In [6]: list(l(even=0))
+Out[6]: [1, 3]
+
+In [7]: litus.lindex.tree_plot(litus.lindex.tree(l,['even','lucky']))
+ \evenindict_keys([0, 1])
+ |even=0
+  \luckyindict_keys([0, 1])
+  |lucky=0
+  |lucky=1
+ |even=1
+```
+
+A larger example
+
+```
+In [8]: numbers = litus.lindex.create([1,2,3,4,5,6,7,8,9,10],{'even':[0,1,0,1,0,1,0,1,0,1],'lucky':[0,0,1,0,0,0,1,0,0,0],'large':[0,0,0,0,0,1,1,1,1,1]})
+
+In [9]: numbers.choices
+Out[9]: {'large': array([0, 1]), 'lucky': array([0, 1]), 'even': array([0, 1])}
+```
+
+Filtering indizes can be done by calling the object and giving kwargs, or using the filter attribute which contains tab completion for all choices.
+```
+In [10]: numbers.filter.even(0)
+Out[10]: Container with 5/10 Elements selected.
+
+In [11]: numbers(lucky=1)+numbers(large=1)
+Out[11]: Container with 6/10 Elements selected.
+
+In [12]: list(numbers(lucky=1)+numbers(large=1))
+Out[12]: [3, 6, 7, 8, 9, 10]
+
+In [13]: list(numbers(even=1)*numbers(large=1))
+Out[13]: [6, 8, 10]
+```
+
+## `O` objects
+
+`O` is a friendly object that provides easy access to it's members. It provides similar methods as a dictionary, but they are named with a leading underscore (._keys() instead of .keys(), etc.).
+
+Example:
+
+```python
+		o = O(some_attribute="I am an attribute")
+    print o.some_attribute
+```
