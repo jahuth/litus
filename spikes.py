@@ -292,7 +292,7 @@ class LabelDimension(object):
         if units != '1' and end_at_end:
             return int(np.ceil((self.max - self.min) / resolution))
         return int(np.ceil((self.max - self.min) / resolution) + 1)
-    def linspace(self,bins=None,units=None,conversion_function=convert_time,resolution=None,end_at_end=True):
+    def linspace(self,bins=None,units=None,conversion_function=convert_time,resolution=None,end_at_end=True,extra_bins=0):
         """ bins overwrites resolution """
         if type(bins) in [list, np.ndarray]:
             return bins
@@ -303,7 +303,7 @@ class LabelDimension(object):
         if resolution is None:
             resolution = 1.0
         if bins is None:
-            bins = self.len(resolution=resolution,units=units,conversion_function=conversion_function)# + 1
+            bins = self.len(resolution=resolution,units=units,conversion_function=conversion_function) + extra_bins
         if units != '1' and end_at_end:
             # continuous variable behaviour:
             #   we end with the last valid value at the outer edge
@@ -311,14 +311,14 @@ class LabelDimension(object):
         # discrete variable behaviour:
         #   we end with the last valid value as its own bin
         return np.linspace(min,max,bins)
-    def linspace_bins(self,bins=None,units=None,conversion_function=convert_time,resolution=None):
+    def linspace_bins(self,bins=None,units=None,conversion_function=convert_time,resolution=None,end_at_end=True,extra_bins=0):
         """Generates bin edges for a linspace tiling: there is one edge more than bins and each bin is in the middle between two edges"""
-        bins = self.linspace(bins=bins,units=units,conversion_function=conversion_function,resolution=resolution)
+        bins = self.linspace(bins=bins,units=units,conversion_function=conversion_function,resolution=resolution,end_at_end=end_at_end,extra_bins=extra_bins)
         resolution = bins[1] - bins[0]
         bins = np.concatenate([bins,bins[-1:]+resolution]) - 0.5*resolution
         return bins
-    def linspace_by_resolution(self,resolution=1.0,units=None,conversion_function=convert_time):
-        return self.linspace(bins=None,resolution=resolution,units=units,conversion_function=conversion_function)
+    def linspace_by_resolution(self,resolution=1.0,units=None,conversion_function=convert_time,end_at_end=True,extra_bins=0):
+        return self.linspace(bins=None,resolution=resolution,units=units,conversion_function=conversion_function,end_at_end=end_at_end,extra_bins=extra_bins)
     def convert(self,units=None,conversion_function=convert_time):
         min = conversion_function(self.min,from_units=self.units,to_units=units)
         max = conversion_function(self.max,from_units=self.units,to_units=units)
@@ -371,7 +371,7 @@ class LabeledMatrix(object):
             return
         i = 0
         while len(self.labels) < self.matrix.shape[1]:
-            self.labels.append('I'+str(i))
+            self.labels.append(LabelDimension('I'+str(i)))
             i += 1
         for i in range(self.matrix.shape[1]):
             if self.labels[i].min is None or self.labels[i].min > np.min(self.matrix[:,i]):
@@ -1044,7 +1044,7 @@ class SpikeContainer:
             if max_t is None:
                 max_t = converted_dimension.max
             st = st[(st>=min_t)*(st<max_t)]
-            bins = converted_dimension.linspace_by_resolution(resolution)
+            bins = converted_dimension.linspace_by_resolution(resolution,end_at_end=True,extra_bins=0)
             H,edg = np.histogram(st,bins=bins)
             if normalize_time:
                 H = H/(convert_time(resolution,from_units=units,to_units='s')) # make it Hertz
