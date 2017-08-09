@@ -231,18 +231,19 @@ class Index(object):
 
 
 def tree(s,args):
-    if len(args) == 0:
+    if len(args) == 0 or args[0] not in s.choices.__dict__.keys():
         return s
     return { args[0]: dict([(a,tree(s(**{args[0]: a}),args[1:])) for a in s.choices.__dict__[args[0]]]) }
 
 def tree_plot(t,indent='',print_leaves=False):
     if not hasattr(t,'keys'):
         if print_leaves:
-            print(( indent,t))
+            print(''.join([ indent, str(t) ]))
         return
-    print(( indent,' \\',t.keys()[0],'in',np.array(t[t.keys()[0]].keys())))
-    for tk,tv in t[t.keys()[0]].items():
-        print(( indent,' |',t.keys()[0],'=',tk))
+    first_element = str(list(t.keys())[0])
+    print(''.join([ str(indent),' \\',first_element,'in',str(np.array(t[first_element].keys()))]))
+    for tk,tv in t[first_element].items():
+        print(''.join([ str(indent),' |',first_element,'=',str(tk)]))
         tree_plot(tv,indent+' ')
 def create(a_list,some_indizes):
     return Index(ContainerList(a_list,some_indizes))
