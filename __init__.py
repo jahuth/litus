@@ -63,7 +63,7 @@ def unsnip(tag=None,start=-1):
         if len(_last_inputs) > 0:
             i.set_next_input(_last_inputs[start])
 
-def animate(a,r=25,every_nth_frame=1,cmap='gray',tmp_dir='tmp',frame_prefix='frame_',animation_name='animation.mp4',func=None):
+def animate(a,r=25,every_nth_frame=1,cmap='gray',tmp_dir='tmp',frame_prefix='frame_',animation_name='animation.mp4',func=None,vmin=None,vmax=None):
     import os,io,glob
     import base64
     import matplotlib.pylab as plt
@@ -87,18 +87,46 @@ def animate(a,r=25,every_nth_frame=1,cmap='gray',tmp_dir='tmp',frame_prefix='fra
     if func == None:
         max_shape = np.max([aa.shape for aa in a if type(aa)==np.ndarray],0)
 
-    for ti,t in enumerate(trange(0,len(a),every_nth_frame)):
-        if func == None:
+    if func == None:
+        # defining the default "draw a frame" function
+
+        # minima and maxima to fix the scale
+        try:
+            a_min = a.min()
+            a_max = a.max()
+        except:
+            try:
+                a_min = np.min(a)
+                a_max = np.max(a)
+            except:
+                a_min = None
+                a_max = None
+        if vmin is not None:
+            a_min = vmin
+        if vmax is not None:
+            a_max = vmax
+
+        def func(im):
             plt.figure()
             plt.title(ti)
-            if type(a[t]) == list:
-                a[t] = np.zeros(max_shape)
-            plt.imshow(a[t],cmap=cmap,vmin=np.min(a),vmax=np.max(a))
+            if type(im) == list:
+                im = np.zeros(max_shape)
+            plt.imshow(im,cmap=cmap,vmin=a_min,vmax=a_max)
             plt.axis('off')
-        else:
+
+    if hasattr(a,'__iter__'):
+        for ti,t in enumerate(a):
+            if ti%every_nth_frame == 0:
+                func(t)
+                plt.savefig(tmp_dir+'/'+frame_prefix+'%04d.png'%ti)
+                plt.close()
+    elif hasattr(a,'__getitem__'):
+        for ti,t in enumerate(xrange(0,len(a),every_nth_frame)):
             func(a[t])
-        plt.savefig(tmp_dir+'/'+frame_prefix+'%04d.png'%ti)
-        plt.close()
+            plt.savefig(tmp_dir+'/'+frame_prefix+'%04d.png'%ti)
+            plt.close()
+    else:
+        raise Exception('a has to be iterable or have len() and getitem!')
     os.system("avconv -i "+tmp_dir+'/'+frame_prefix+"%04d.png -r "+str(r)+" "+tmp_dir+'/'+animation_name)
     video = io.open(tmp_dir+'/'+animation_name, 'r+b').read()
     encoded = base64.b64encode(video)
