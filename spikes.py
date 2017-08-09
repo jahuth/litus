@@ -15,7 +15,7 @@ import numpy
 import pandas
 import json
 from scipy.stats import binned_statistic
-
+from . import o
 from litus import cartesian, cartesian_to_index, icartesian, icartesian_to_index
 
 # Spike Container Class
@@ -252,25 +252,32 @@ class SpikeContainerCollection:
         return self.spike_containers[key]
 
 class LabelDimension(object):
-    def __init__(self,name=None,units='1',min=None,max=None,**kwargs):
+    def __init__(self,name=None,units='1',min=None,max=None,scale='linear',**kwargs):
         if type(name) == str:
             self.name = name
             self.units = units
             self.min = min
             self.max = max
+            self.scale = scale 
         elif type(name) == tuple:
             self.name = name[0]
             self.units = name[1]
             self.min = min
             self.max = max
+            self.scale = scale 
         else:
             self.name = name.name
             self.units = name.units
             self.min = name.min
             self.max = name.max
+            self.scale = name.scale 
     def __str__(self):
+        if self.scale not in ['lin','linear']:
+            return "LabelDimension('"+self.name+"',"+str(self.units)+","+str(self.min)+","+str(self.max)+", scale: "+str(self.scale)+")"
         return "LabelDimension('"+self.name+"',"+str(self.units)+","+str(self.min)+","+str(self.max)+")"
     def __repr__(self):
+        if self.scale not in ['lin','linear']:
+            return "LabelDimension('"+self.name+"',"+str(self.units)+","+str(self.min)+","+str(self.max)+", scale: "+str(self.scale)+")"
         return "LabelDimension('"+self.name+"',"+str(self.units)+","+str(self.min)+","+str(self.max)+")"
     def len(self,resolution=1.0,units=None,conversion_function=convert_time, end_at_end=True):
         """
@@ -292,6 +299,40 @@ class LabelDimension(object):
         if units != '1' and end_at_end:
             return int(np.ceil((self.max - self.min) / resolution))
         return int(np.ceil((self.max - self.min) / resolution) + 1)
+    def space(self,bins=None,units=None,conversion_function=convert_time,resolution=None,end_at_end=True,scale=None):
+        """
+            Computes adequat binning for the dimension (on the values).
+
+                bins: number of bins or None
+                units: str or None
+                conversion_function: function to convert units to other units
+                resolution: step size or None
+                end_at_end: Boolean
+                    only if `unit == 1`
+                    whether or not the last point should be the last data point (True) or one after the last valid point (False)
+                scale: 'lin','log' or None
+                    a spike container can also use 'unique', but not the LabelDimension itself!
+                    if the LabelDimension.scale is 'unique', .bins() will return a linear spacing
+        """
+        if scale in ['log'] or (scale is None and self.scale in ['log']):
+            return self.logspace(bins=bins,units=units,conversion_function=conversion_function,resolution=resolution,end_at_end=end_at_end)
+        return self.linspace(bins=bins,units=units,conversion_function=conversion_function,resolution=resolution,end_at_end=end_at_end)
+    def bins(self,bins=None,units=None,conversion_function=convert_time,resolution=None,scale=None):
+        """
+            Computes adequat binning for the dimension (between the values).
+
+                bins: number of bins or None
+                units: str or None
+                conversion_function: function to convert units to other units
+                resolution: step size or None
+                scale: 'lin','log' or None
+                    a spike container can also use 'unique', but not the LabelDimension itself!
+                    if the LabelDimension.scale is 'unique', .bins() will return a linear spacing
+        """
+        if scale in ['log'] or (scale is None and self.scale in ['log']):
+            return self.logspace_bins(bins=bins,units=units,conversion_function=conversion_function,resolution=resolution)
+        #if scale in ['lin','linear'] or (scale is None and self.scale in ['lin','linear']):
+        return self.linspace_bins(bins=bins,units=units,conversion_function=conversion_function,resolution=resolution)
     def linspace(self,bins=None,units=None,conversion_function=convert_time,resolution=None,end_at_end=True,extra_bins=0):
         """ bins overwrites resolution """
         if type(bins) in [list, np.ndarray]:
@@ -319,13 +360,45 @@ class LabelDimension(object):
         return bins
     def linspace_by_resolution(self,resolution=1.0,units=None,conversion_function=convert_time,end_at_end=True,extra_bins=0):
         return self.linspace(bins=None,resolution=resolution,units=units,conversion_function=conversion_function,end_at_end=end_at_end,extra_bins=extra_bins)
+    def logspace(self,bins=None,units=None,conversion_function=convert_time,resolution=None,end_at_end=True):
+        """ bins overwrites resolution """
+        if type(bins) in [list, np.ndarray]:
+            return bins
+        min = conversion_function(self.min,from_units=self.units,to_units=units)
+        max = conversion_function(self.max,from_units=self.units,to_units=units)
+        if units is None:
+            units = self.units
+        if resolution is None:
+            resolution = 1.0
+        if bins is None:
+            bins = self.len(resolution=resolution,units=units,conversion_function=conversion_function)# + 1
+        if units != '1' and end_at_end:
+            # continuous variable behaviour:
+            #   we end with the last valid value at the outer edge
+            return np.logspace(np.log10(min),np.log10(max),bins+1)[:-1]
+        # discrete variable behaviour:
+        #   we end with the last valid value as its own bin
+        return np.logspace(np.log10(min),np.log10(max),bins)
+    def logspace_bins(self,bins=None,units=None,conversion_function=convert_time,resolution=None):
+        """Generates bin edges for a logspace tiling: there is one edge more than bins and each bin is between two edges"""
+        bins = self.logspace(bins=bins,units=units,conversion_function=conversion_function,resolution=resolution,end_at_end=False)
+        resolution = np.mean((bins[:-1]) / (bins[1:]))
+        bins = np.concatenate([bins*np.sqrt(resolution),bins[-1:]/np.sqrt(resolution)])
+        return bins
     def convert(self,units=None,conversion_function=convert_time):
         min = conversion_function(self.min,from_units=self.units,to_units=units)
         max = conversion_function(self.max,from_units=self.units,to_units=units)
-        return LabelDimension(self.name, units, min, max)
+        return LabelDimension(self.name, units, min, max, scale=self.scale)
     def constraint_range_dict(self,*args,**kwargs):
-        """ bins overwrites resolution """
-        space = self.linspace(*args,**kwargs)
+        """ 
+            Creates a list of dictionaries which each give a constraint for a certain
+            section of the dimension.
+
+            bins arguments overwrites resolution
+        """
+        bins = self.bins(*args,**kwargs)
+        return [{self.name+'__gte': a,self.name+'__lt': b} for a,b in zip(bins[:-1],bins[1:])]
+        space = self.space(*args,**kwargs)
         resolution = space[1] - space[0]
         return [{self.name+'__gte': s,self.name+'__lt': s+resolution} for s in space]
 
@@ -342,7 +415,8 @@ class LabeledMatrix(object):
             # dimensions that were used for filtering can be retained (default) or removed.
 
     """
-    def __init__(self,matrix=None,labels=None,**kwargs):
+    def __init__(self,matrix=None,labels=None,_constraints=[],**kwargs):
+        self._constraints = _constraints
         if matrix is not None:
             self.matrix = matrix.copy()
             if len(self.matrix.shape) == 1:
@@ -358,7 +432,7 @@ class LabeledMatrix(object):
                     self.labels.append(LabelDimension(*l))
                 else:
                     try:
-                        self.labels.append(LabelDimension(l.name,l.units,l.min,l.max))
+                        self.labels.append(LabelDimension(l.name,l.units,l.min,l.max,scale=l.scale))
                     except:
                         raise Exception('Input of `labels` was not understood. Use a list of `str`s, `list`s or `LabelDimension`s')
         self.expand_maxima()
@@ -366,6 +440,13 @@ class LabeledMatrix(object):
         return "LabeledMatrix with label dimensions: "+", ".join([str(l) for l in self.labels])
     def __repr__(self):
         return "LabeledMatrix with label dimensions: "+", ".join([repr(l) for l in self.labels])
+    def __add__(self,other):
+        """
+            If the number of columns matches, we can concatenate two LabeldMatrices
+            with the + operator.
+        """
+        assert self.matrix.shape[1] == other.matrix.shape[1]
+        return LabeledMatrix(np.concatenate([self.matrix,other.matrix],axis=0),self.labels)
     def expand_maxima(self):
         if self.matrix is None or self.matrix.shape[0] == 0 or len(self.matrix.shape) < 2:
             return
@@ -459,6 +540,51 @@ class LabeledMatrix(object):
         return self.matrix.__getitem__(key)
     def __len__(self):
         return self.matrix.__len__()
+    def bins(self,dim,*args,**kwargs):
+        if self.get_label(dim).scale == 'unique':
+            space = np.unique(self[dim])
+            smalles_diff = np.min(np.diff(space))
+            return np.concatenate([[space[0] - 0.5*smalles_diff],space + 0.5*smalles_diff])
+        return self.get_label(dim).bins(*args,**kwargs)
+    def bin_pairs(self,dim,*args,**kwargs):
+        bins = self.bins(dim,*args,**kwargs)
+        return np.transpose([bins[:-1],bins[1:]])
+    def space(self,dim,*args,**kwargs):
+        if self.get_label(dim).scale == 'unique':
+            return np.unique(self[dim])
+        return self.get_label(dim).space(*args,**kwargs)
+    def hist(self,*args,**kwargs):
+        import numpy as np
+        weights = kwargs.get('weights',None)
+        if type(weights) == str or type(weights) == int:
+            weights = self[weights]
+        kwargs['weights'] = weights
+        return np.histogramdd([self[a] for a in args],
+                               bins=[self.bins(a) for a in args],
+                               **kwargs)
+    def table(self,x,*args,**kwargs):
+        """
+            returns the values of column x
+            in an n-dimensional array, each
+            dimension being the values from
+            a dimension in *args
+
+            at the moment very slow due to generate :/
+        """
+        reduce_func = kwargs.get('reduce',lambda x: x)
+        data = []
+        for i,d in enumerate(self.generate(*args)):
+            if len(d) > 0:
+                data.append(reduce_func(d[x]))
+            else:
+                data.append(0)
+        try:
+            return np.reshape(data,[len(self.space(a)) for a in args])
+        except:
+            return np.reshape(data,[-1]+[len(self.space(a)) for a in args])
+    @property
+    def dim(self):
+        return o.O(**dict([(n.name,n.name) for n in self.labels]))
     @property
     def shape(self):
         return self.matrix.shape
@@ -466,7 +592,7 @@ class LabeledMatrix(object):
         label_no = self.get_label_no(label)
         min = conversion_function(self.labels[label_no].min,from_units=self.labels[label_no].units,to_units=units)
         max = conversion_function(self.labels[label_no].max,from_units=self.labels[label_no].units,to_units=units)
-        new_label = LabelDimension(self.labels[label_no].name,units=units,min=min,max=max)
+        new_label = LabelDimension(self.labels[label_no].name,units=units,min=min,max=max,scale=self.labels[label_no].scale)
         return new_label,conversion_function(self.matrix[:,label_no],from_units=self.labels[label_no].units,to_units=units)
     def convert(self,label,units=None,conversion_function=convert_time):
         """ converts a dimension in place """
@@ -477,6 +603,46 @@ class LabeledMatrix(object):
         matrix = self.matrix.copy()
         matrix[:,label_no] = new_column
         return LabeledMatrix(matrix,labels)
+    def _get_constrained_labels(self,remove_dimensions=False,**kwargs):
+        """
+            returns labels which have updated minima and maxima,
+            depending on the kwargs supplied to this
+        """
+        new_labels = []
+        for label_no,label in enumerate(self.labels):
+            new_label = LabelDimension(label)
+            remove = False
+            for k in kwargs:
+                if k == label.name:
+                    new_label.max = kwargs[k]
+                    new_label.min = kwargs[k]
+                    remove = True
+                if k == label.name+'__lt':
+                    if new_label.units == '1':
+                        new_label.max = np.min([new_label.max,kwargs[k]-1]) # is this right?
+                    else:
+                        new_label.max = np.min([new_label.max,kwargs[k]])
+                    #remove = True
+                if k == label.name+'__lte':
+                    new_label.max = np.min([new_label.max,kwargs[k]])
+                    #remove = True
+                if k == label.name+'__gt':
+                    if new_label.units == '1':
+                        new_label.min = np.max([new_label.min,kwargs[k]+1])
+                    else:
+                        new_label.min = np.max([new_label.min,kwargs[k]])
+                    #remove = True
+                if k == label.name+'__gte':
+                    new_label.min = np.max([new_label.min,kwargs[k]])
+                    #remove = True
+                if k == label.name+'__evals':
+                    remove = True
+            if remove_dimensions:
+                if remove:
+                    # skipping removed labels
+                    continue
+            new_labels.append(new_label)
+        return new_labels
     def __call__(self,remove_dimensions=False,**kwargs):
         constraints = []
         remaining_label_dimensions = range(len(self.labels))
@@ -521,14 +687,16 @@ class LabeledMatrix(object):
                     if label_no in remaining_label_dimensions:
                         remaining_label_dimensions.remove(label_no)
             new_labels.append(new_label)
-
         st = self.matrix[np.all(constraints,0),:]
         if remove_dimensions:
-            return LabeledMatrix(st[:,[r for r in remaining_label_dimensions]],[l for li,l in enumerate(new_labels) if li in remaining_label_dimensions])
-        return LabeledMatrix(st,new_labels)
+            return LabeledMatrix(st[:,[r for r in remaining_label_dimensions]],
+                                 [l for li,l in enumerate(new_labels) if li in remaining_label_dimensions],
+                                 _constraints=self._constraints+kwargs.items())
+        return LabeledMatrix(st,new_labels,
+                             _constraints=self._constraints+kwargs.items())
     def add_label_dimension(self,name,label_data,label_label=None):
         if type(label_data) in [float,bool,int]:
-            label_data = np.array(label_data)
+            label_data = np.array([label_data]*self.matrix.shape[0])
         if len(label_data.shape) == 1:
             if label_label is None:
                 label_label = LabelDimension(name)
@@ -539,13 +707,15 @@ class LabeledMatrix(object):
                     elif type(label_label) is tuple:
                         label_label = LabelDimension(name, units=label_label[1])
                     else:
-                        label_label = LabelDimension(name, units=label_label.units, min=label_label.min, max=label_label.max)
+                        label_label = LabelDimension(name, units=label_label.units, min=label_label.min, max=label_label.max, scale=label_label.scale)
             self.labels.append(label_label)
             self.matrix = np.concatenate([self.matrix,label_data[:,np.newaxis]],1)
-        if len(label_data.shape) == 2:
+        elif len(label_data.shape) == 2:
             if type(name) is list or type(name) is tuple:
                 self.labels.extend([LabelDimension(n) for n in name])
                 self.matrix = np.concatenate([self.matrix,label_data],1) 
+        else:
+            raise Exception('Datatype not understood: '+str(label_data))
         self.expand_maxima()               
     def add_index(self,name='index',order=None):
         if order is not None:
@@ -556,6 +726,15 @@ class LabeledMatrix(object):
         self.add_label(name, new_index)
     def __nonzero__(self):
         return self.matrix.shape[0] > 0
+    def constraint_range_dict(self,i,**kwargs):
+        if self.labels[i].scale == 'unique':
+            return [{self.labels[i].name: l} for l in np.unique(self.matrix[:,i])]
+        return self.labels[i].constraint_range_dict(**kwargs)
+    def space_mask(self,i):
+        if self.labels[i].scale == 'unique':
+            return np.array([self[i] == l for l in np.unique(self.matrix[:,i])])
+        else:
+            return np.array([(self[i] >= a)*(self[i] < b) for (a,b) in self.bin_pairs(i)])
     def generate(self,*args,**kwargs):
         """
         Creates an iterator over one of the index dimensions of the object.
@@ -593,13 +772,13 @@ class LabeledMatrix(object):
             generator_indizes = list(reversed(generator_indizes))
         kwargs.pop('reversed',None)
         kwargs.pop('fuzzy',None)
-        generator_ranges = cartesian([self.labels[i].constraint_range_dict(**kwargs) for i in generator_indizes])
+        generator_ranges = cartesian([self.constraint_range_dict(i,**kwargs) for i in generator_indizes])
         remaining_label_dimensions = [i for i,l in enumerate(self.labels) if i not in generator_indizes]
         for generator_t in generator_ranges:
             constraints = {}
             for ri, i in enumerate(generator_indizes):
                 constraints.update(generator_t[ri])
-            yield self(remove_dimensions=remove_dimensions, **constraints)
+            yield self(remove_dimensions=remove_dimensions,**constraints)
 
 
 class SpikeContainer:
@@ -1229,6 +1408,10 @@ class SpikeContainer:
                 in 5 bins (at a resolution of 1.0).
         """
         return self.spike_times.get_label(dim).linspace(*args,**kwargs)
+    def bins(self,dim,*args,**kwargs):
+        return self.spike_times.bins(dim,*args,**kwargs)
+    def space(self,dim,*args,**kwargs):
+        return self.spike_times.space(dim,*args,**kwargs)
     def linspace_bins(self,dim,*args,**kwargs):
         """
             Like linspace, but shifts the space to create edges for histograms.
