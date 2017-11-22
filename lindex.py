@@ -1,5 +1,31 @@
 import numpy as np
+"""
 
+This module provides an indexed list.
+
+Usage Example:
+
+```
+l = lindex.create(['a','b','c'],[{'letter':0},{'letter':1},{'letter':2}])
+```
+
+or:
+
+```
+l = lindex.create(['a','b','c'],{'letter':[0,1,2]})
+```
+
+This will create a ContainerList wrapped in an Index (or view).
+
+The Index holds a binary mask for each item in the list, so that 
+the index dimensions can be used to filter the list without the list
+items being copied.
+
+The list in the ContainerList is supposed to be static (such that indizes
+will remain valid).
+
+
+"""
 def _replace_operators(k):
     import re
     pattern = re.compile("|".join(['-','\.',' ']), re.M)
@@ -63,6 +89,11 @@ _magic_keys = {
 }   
 class ContainerList(object):
     def __init__(self,list_of_things,list_of_indizes):
+        """
+            A list in a container, providing information about
+            index dimensions (counting unique values only).
+
+        """
         from .__init__ import ld2dl, dl2ld
         import copy
         self.contained_list = list_of_things
@@ -169,6 +200,13 @@ class IndexGenerator(object):
 
 class Index(object):
     def __init__(self,container,indizes = None, set_values={}):
+        """
+            A lindex.Index holds data with indizes.
+
+            Right now I alos forgot how it works.
+
+
+        """
         self.c = container
         self.indizes = indizes
         if self.indizes is None:

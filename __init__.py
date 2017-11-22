@@ -135,7 +135,6 @@ def animate(a,r=25,every_nth_frame=1,cmap='gray',tmp_dir='tmp',frame_prefix='fra
         o = subprocess.check_output("avconv -i "+tmp_dir+'/'+frame_prefix+"%04d.png -r "+str(r)+" "+tmp_dir+'/'+animation_name, shell=True)
         video = io.open(tmp_dir+'/'+animation_name, 'r+b').read()
     except:
-        print o
         raise
     encoded = base64.b64encode(video)
     return HTML(data='''<video alt="test" autoplay loop controls>
