@@ -26,6 +26,7 @@ will remain valid).
 
 
 """
+
 def _replace_operators(k):
     import re
     pattern = re.compile("|".join(['-','\.',' ']), re.M)
