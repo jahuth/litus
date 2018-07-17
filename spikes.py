@@ -645,7 +645,7 @@ class LabeledMatrix(object):
         return new_labels
     def __call__(self,remove_dimensions=False,**kwargs):
         constraints = []
-        remaining_label_dimensions = range(len(self.labels))
+        remaining_label_dimensions = list(range(len(self.labels)))
         new_labels = []
         for label_no,label in enumerate(self.labels):
             new_label = LabelDimension(label)
@@ -691,9 +691,9 @@ class LabeledMatrix(object):
         if remove_dimensions:
             return LabeledMatrix(st[:,[r for r in remaining_label_dimensions]],
                                  [l for li,l in enumerate(new_labels) if li in remaining_label_dimensions],
-                                 _constraints=self._constraints+kwargs.items())
+                                 _constraints=self._constraints+list(kwargs.items()))
         return LabeledMatrix(st,new_labels,
-                             _constraints=self._constraints+kwargs.items())
+                             _constraints=self._constraints+list(kwargs.items()))
     def add_label_dimension(self,name,label_data,label_label=None):
         if type(label_data) in [float,bool,int]:
             label_data = np.array([label_data]*self.matrix.shape[0])
@@ -1243,13 +1243,30 @@ class SpikeContainer:
             import matplotlib.pylab as plt
             H,ed = self.temporal_firing_rate(time_dimension=time_dimension,resolution=resolution,units=units,min_t=min_t,max_t=max_t,weight_function=weight_function,normalize_time=normalize_time,normalize_n=normalize_n,start_units_with_0=start_units_with_0,cell_dimension=cell_dimension)
             plt.plot(ed[1:],H,**kwargs)
-    def plot_raster(self,time_dimension=0,resolution=1.0,units=None,min_t=None,max_t=None,weight_function=None,normalize_time=True,normalize_n=True,start_units_with_0=True,cell_dimension='N',**kwargs):
-        """
-            Plots a raster plot.
+    def plot_raster(self,cell_dimension='N',time_dimension=0,
+                         resolution=1.0,units=None,min_t=None,max_t=None,
+                         weight_function=None,normalize_time=True,normalize_n=True,
+                         start_units_with_0=True,**kwargs):
+        """Plots a raster plot with `cell_dimension` as y and `time_dimension` as x (default: 'N' and 0).
 
             Accepts the same keyword arguments as matplotlib.pylab.plot() for points, eg. `marker`,
             `markerfacecolor`, `markersize` (or `ms`), `markeredgecolor`.
             See help for :func:`matplotlib.pylab.plot()`.
+
+            Examples
+            --------
+
+            
+                >>> import numpy as np
+                >>> from litus import spikes
+                >>> spiking_data = np.random.rand(2000,20,20) < 0.01
+                >>> s = spikes.SpikeContainer(np.transpose(np.where(spiking_data)),labels='txy')
+                >>> s['N'] = s['x']+20*s['y']
+                >>> s.plot_raster('N','t')
+                >>> s(t__gt=1000,t__lt=1500,x__lt=2).plot_raster(ms=10,marker='$\\alpha$') # default: 'N'
+                >>> s(t__gt=1000,t__lt=1500,y__lt=2).plot_raster(ms=10,marker='$\\beta$')  # default: 'N'
+                >>> s(n=350).plot_raster('n','t_rescaled',ms=10,marker='$\\gamma$')
+
         """
         if bool(self):
             import matplotlib.pylab as plt
