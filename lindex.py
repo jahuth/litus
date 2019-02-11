@@ -17,7 +17,7 @@ l = lindex.create(['a','b','c'],{'letter':[0,1,2]})
 
 This will create a ContainerList wrapped in an Index (or view).
 
-The Index holds a binary mask for each item in the list, so that 
+The Index holds a binary mask for each item in the list, so that
 the index dimensions can be used to filter the list without the list
 items being copied.
 
@@ -87,7 +87,7 @@ _magic_keys = {
     'not': lambda x,y: x != y,
     'startswith': lambda x,y: x.startswith(y),
     'evals': lambda x,y: y(x)
-}   
+}
 class ContainerList(object):
     def __init__(self,list_of_things,list_of_indizes):
         """
@@ -128,7 +128,7 @@ class ContainerList(object):
     @property
     def index(self):
         return O(**dict([(k,k) for k in self.indizes.keys()]))
-    
+
 class IndexFilter(object):
     def __init__(self,container_index,key,subkeys=_magic_keys.keys()):
         self._ci = container_index
@@ -147,7 +147,7 @@ class IndexGeneratorManager(object):
     def __call__(self,*args,**kwargs):
         context=kwargs.pop('context',None)
         return IndexGenerator(self._ci(**kwargs),context=context,*args)
-    
+
 def IndexGenerator(container_index,*keys,**kwargs):
     levels = container_index.levels.__dict__[keys[0]]
     context=kwargs.pop('context',None)
@@ -196,7 +196,8 @@ class IndexGenerator(object):
         return self
     def next(self):
         return self.gen.next()
-    
+    def __next__(self):
+        return next(self.gen)
 
 
 class Index(object):

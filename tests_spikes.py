@@ -2,7 +2,8 @@
 
 import silver
 import litus.spikes
-retina = silver.glue.RetinaSimulation('/home/jacob/Projects/Silversight/notebooks/tmp/2015_12_01_rr_sf_noise_model_noisy_BVUPU/retina/4/simulation.txt')
+# cd e.g. to /home/jacob/Projects/Silversight/notebooks/tmp/2015_12_01_rr_sf_noise_model_noisy_BVUPU/retina/4/
+retina = silver.glue.RetinaSimulation('simulation.txt')
 num_layers = len(retina.layers)
 ls = retina.layers
 unit_positions = retina.retinafile.get_units()
@@ -41,7 +42,7 @@ for i,n in enumerate(sc.generate('y',bins=3,remove_dimensions=False)):
         X, Y = np.meshgrid(xed, yed)
         pcolormesh(X, Y, H, cmap='gray')
         gca().set_aspect('equal')
-        
+
 # Adding the distance from the center:
 sc.spike_times.add_label_dimension('d',sc.spike_times['x']**2 + sc.spike_times['y']**2)
 # And plotting rings with about equal distance:

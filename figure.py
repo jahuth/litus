@@ -7,7 +7,7 @@ class EmptyContext(object):
     def __init__(self):
         pass
     def __enter__(self):
-        return self 
+        return self
     def __exit__(self, *args):
         pass
 
@@ -34,14 +34,14 @@ class Figure(object):
                     ax = self.subplot(i)
                     ax.text(self.letter_pos[0],
                             self.letter_pos[1],
-                            string.ascii_uppercase[i], 
-                            transform=ax.transAxes, 
+                            string.ascii_uppercase[i],
+                            transform=ax.transAxes,
                             size=20, weight='bold')
         self.subplot(-1)
     def letter(self, n):
         ax = plt.gca()
         ax.text(self.letter_pos[0],
-                self.letter_pos[1], n, transform=ax.transAxes, 
+                self.letter_pos[1], n, transform=ax.transAxes,
         size=20, weight='bold')
     def gca(self):
         return self.ax
@@ -58,10 +58,12 @@ class Figure(object):
     def next(self):
         self.subplot()
         return self
+    def __next__(self):
+        return self.next()
     def __enter__(self,n=None):
         self.ctx.append(self.style())
         self.ctx[-1].__enter__()
-        return self.ax 
+        return self.ax
     def __exit__(self, *args):
         ctx = self.ctx.pop(-1)
         ctx.__exit__(*args)
